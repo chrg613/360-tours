@@ -1,0 +1,426 @@
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Plus,
+  Search,
+  Filter,
+  MoreVertical,
+  Eye,
+  Pencil,
+  Trash2,
+  Copy,
+  ExternalLink,
+  Grid3X3,
+  List,
+  Images,
+  Clock,
+} from 'lucide-react';
+import {
+  Card,
+  CardContent,
+  Button,
+  Input,
+  Badge,
+  Skeleton,
+  SkeletonCard,
+} from '@/components/ui';
+import { toursApi } from '@/api';
+import { ROUTES, QUERY_KEYS, TOUR_STATUS_OPTIONS } from '@/constants';
+import { formatCompactNumber, formatRelativeTime } from '@/utils/format';
+import type { Tour } from '@/types';
+import { cn } from '@/utils';
+
+type ViewMode = 'grid' | 'list';
+
+export function ToursPage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [page, setPage] = useState(1);
+
+  // Fetch tours
+  const { data, isLoading } = useQuery({
+    queryKey: [QUERY_KEYS.TOURS, { page, search: searchQuery, status: statusFilter }],
+    queryFn: () =>
+      toursApi.getTours({
+        page,
+        page_size: 12,
+        search: searchQuery || undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+      }),
+  });
+
+  // Delete tour mutation
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => toursApi.deleteTour(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.TOURS] });
+    },
+  });
+
+  // Duplicate tour mutation
+  const duplicateMutation = useMutation({
+    mutationFn: (id: string) => toursApi.duplicateTour(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.TOURS] });
+    },
+  });
+
+  const tours = data?.items || [];
+  const totalPages = data?.total_pages || 1;
+
+  const handleDelete = async (tour: Tour) => {
+    if (confirm(`Are you sure you want to delete "${tour.title}"?`)) {
+      await deleteMutation.mutateAsync(tour.id);
+    }
+  };
+
+  const handleDuplicate = async (tour: Tour) => {
+    await duplicateMutation.mutateAsync(tour.id);
+  };
+
+  return (
+    <div className="animate-fade-in space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Tours</h1>
+          <p className="mt-1 text-[var(--color-text-muted)]">
+            Manage and organize your virtual tours
+          </p>
+        </div>
+        <Link to={ROUTES.TOUR_CREATE}>
+          <Button>
+            <Plus className="h-4 w-4" />
+            Create Tour
+          </Button>
+        </Link>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-1 gap-4">
+          {/* Search */}
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search tours..."
+              className="pl-10"
+            />
+          </div>
+
+          {/* Status Filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-500)]"
+          >
+            <option value="all">All Status</option>
+            {TOUR_STATUS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* View Mode Toggle */}
+        <div className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] p-1">
+          <button
+            onClick={() => setViewMode('grid')}
+            className={cn(
+              'rounded-md p-2 transition-colors',
+              viewMode === 'grid'
+                ? 'bg-[var(--color-surface)] text-[var(--color-text-primary)]'
+                : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+            )}
+          >
+            <Grid3X3 className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={cn(
+              'rounded-md p-2 transition-colors',
+              viewMode === 'list'
+                ? 'bg-[var(--color-surface)] text-[var(--color-text-primary)]'
+                : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+            )}
+          >
+            <List className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Tours Grid/List */}
+      {isLoading ? (
+        <div className={cn(
+          viewMode === 'grid'
+            ? 'grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+            : 'space-y-4'
+        )}>
+          {[...Array(8)].map((_, i) => (
+            viewMode === 'grid' ? (
+              <SkeletonCard key={i} />
+            ) : (
+              <Skeleton key={i} className="h-20 w-full" />
+            )
+          ))}
+        </div>
+      ) : tours.length === 0 ? (
+        <Card className="py-16">
+          <CardContent className="text-center">
+            <Images className="mx-auto h-16 w-16 text-[var(--color-text-muted)]" />
+            <h3 className="mt-4 text-lg font-semibold text-[var(--color-text-primary)]">
+              No tours found
+            </h3>
+            <p className="mt-2 text-[var(--color-text-muted)]">
+              {searchQuery
+                ? 'Try adjusting your search or filters'
+                : 'Create your first virtual tour to get started'}
+            </p>
+            {!searchQuery && (
+              <Link to={ROUTES.TOUR_CREATE}>
+                <Button className="mt-6">
+                  <Plus className="h-4 w-4" />
+                  Create Tour
+                </Button>
+              </Link>
+            )}
+          </CardContent>
+        </Card>
+      ) : viewMode === 'grid' ? (
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {tours.map((tour) => (
+            <TourCard
+              key={tour.id}
+              tour={tour}
+              onEdit={() => navigate(`/tours/${tour.id}/edit`)}
+              onDelete={() => handleDelete(tour)}
+              onDuplicate={() => handleDuplicate(tour)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {tours.map((tour) => (
+            <TourListItem
+              key={tour.id}
+              tour={tour}
+              onEdit={() => navigate(`/tours/${tour.id}/edit`)}
+              onDelete={() => handleDelete(tour)}
+              onDuplicate={() => handleDuplicate(tour)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page === 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-[var(--color-text-muted)]">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page === totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            Next
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Tour Card Component
+interface TourCardProps {
+  tour: Tour;
+  onEdit: () => void;
+  onDelete: () => void;
+  onDuplicate: () => void;
+}
+
+function TourCard({ tour, onEdit, onDelete, onDuplicate }: TourCardProps) {
+  const [showMenu, setShowMenu] = useState(false);
+
+  return (
+    <Card className="group overflow-hidden transition-shadow hover:shadow-md">
+      <div className="relative aspect-video overflow-hidden bg-[var(--color-surface)]">
+        {tour.thumbnail_url ? (
+          <img
+            src={tour.thumbnail_url}
+            alt={tour.title}
+            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">
+            <Images className="h-12 w-12 text-[var(--color-text-muted)]" />
+          </div>
+        )}
+        <div className="absolute right-2 top-2">
+          <Badge variant={tour.status === 'published' ? 'success' : 'secondary'}>
+            {tour.status}
+          </Badge>
+        </div>
+      </div>
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate font-semibold text-[var(--color-text-primary)]">
+              {tour.title}
+            </h3>
+            <div className="mt-2 flex items-center gap-4 text-sm text-[var(--color-text-muted)]">
+              <span className="flex items-center gap-1">
+                <Eye className="h-3.5 w-3.5" />
+                {formatCompactNumber(tour.view_count)}
+              </span>
+              <span className="flex items-center gap-1">
+                <Images className="h-3.5 w-3.5" />
+                {tour.scene_count || 0} scenes
+              </span>
+            </div>
+            <p className="mt-1 flex items-center gap-1 text-xs text-[var(--color-text-muted)]">
+              <Clock className="h-3 w-3" />
+              {formatRelativeTime(tour.updated_at)}
+            </p>
+          </div>
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setShowMenu(!showMenu)}
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+            {showMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setShowMenu(false)}
+                />
+                <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-1 shadow-lg">
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      onEdit();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-[var(--color-surface)]"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      onDuplicate();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-[var(--color-surface)]"
+                  >
+                    <Copy className="h-4 w-4" />
+                    Duplicate
+                  </button>
+                  {tour.status === 'published' && (
+                    <a
+                      href={`/view/${tour.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-[var(--color-surface)]"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      View Live
+                    </a>
+                  )}
+                  <hr className="my-1 border-[var(--color-border)]" />
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      onDelete();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-[var(--color-error-600)] hover:bg-[var(--color-error-50)]"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Tour List Item Component
+function TourListItem({ tour, onEdit, onDelete, onDuplicate }: TourCardProps) {
+  return (
+    <Card className="transition-shadow hover:shadow-md">
+      <CardContent className="flex items-center gap-4 p-4">
+        <div className="h-16 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-[var(--color-surface)]">
+          {tour.thumbnail_url ? (
+            <img
+              src={tour.thumbnail_url}
+              alt={tour.title}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <Images className="h-8 w-8 text-[var(--color-text-muted)]" />
+            </div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate font-semibold text-[var(--color-text-primary)]">
+              {tour.title}
+            </h3>
+            <Badge variant={tour.status === 'published' ? 'success' : 'secondary'}>
+              {tour.status}
+            </Badge>
+          </div>
+          <div className="mt-1 flex items-center gap-4 text-sm text-[var(--color-text-muted)]">
+            <span className="flex items-center gap-1">
+              <Eye className="h-3.5 w-3.5" />
+              {formatCompactNumber(tour.view_count)} views
+            </span>
+            <span className="flex items-center gap-1">
+              <Images className="h-3.5 w-3.5" />
+              {tour.scene_count || 0} scenes
+            </span>
+            <span className="flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" />
+              {formatRelativeTime(tour.updated_at)}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={onEdit}>
+            <Pencil className="h-4 w-4" />
+            Edit
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={onDuplicate}>
+            <Copy className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={onDelete}>
+            <Trash2 className="h-4 w-4 text-[var(--color-error-600)]" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

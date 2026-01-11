@@ -1,0 +1,165 @@
+import { http, HttpResponse } from 'msw';
+import { setupServer } from 'msw/node';
+
+// Mock data
+export const mockUser = {
+  id: 'user-1',
+  email: 'test@example.com',
+  full_name: 'Test User',
+  is_active: true,
+  role: 'user',
+  profile_image_url: null,
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+};
+
+export const mockTour = {
+  id: 'tour-1',
+  title: 'Test Tour',
+  description: 'A test tour description',
+  status: 'published',
+  is_public: true,
+  thumbnail_url: 'https://example.com/thumb.jpg',
+  settings: {},
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+  owner_id: 'user-1',
+};
+
+export const mockScene = {
+  id: 'scene-1',
+  tour_id: 'tour-1',
+  title: 'Test Scene',
+  image_url: 'https://example.com/scene.jpg',
+  order_index: 0,
+  metadata: {},
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+};
+
+export const mockHotspot = {
+  id: 'hotspot-1',
+  scene_id: 'scene-1',
+  type: 'navigation',
+  title: 'Go to Living Room',
+  yaw: 0,
+  pitch: 0,
+  target_scene_id: 'scene-2',
+  style: {},
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+};
+
+// API handlers
+export const handlers = [
+  // Auth
+  http.post('/api/v1/auth/login', () => {
+    return HttpResponse.json({
+      access_token: 'mock-access-token',
+      refresh_token: 'mock-refresh-token',
+      token_type: 'bearer',
+    });
+  }),
+
+  http.post('/api/v1/auth/logout', () => {
+    return HttpResponse.json({ message: 'Logged out' });
+  }),
+
+  // Users
+  http.get('/api/v1/users/me', () => {
+    return HttpResponse.json(mockUser);
+  }),
+
+  http.put('/api/v1/users/me', () => {
+    return HttpResponse.json(mockUser);
+  }),
+
+  // Tours
+  http.get('/api/v1/tours', () => {
+    return HttpResponse.json({
+      items: [mockTour],
+      total: 1,
+      page: 1,
+      per_page: 10,
+    });
+  }),
+
+  http.get('/api/v1/tours/:id', ({ params }) => {
+    return HttpResponse.json({
+      ...mockTour,
+      id: params.id,
+    });
+  }),
+
+  http.post('/api/v1/tours', async ({ request }) => {
+    const body = await request.json() as Record<string, unknown>;
+    return HttpResponse.json({
+      ...mockTour,
+      ...body,
+      id: 'new-tour-id',
+    });
+  }),
+
+  http.put('/api/v1/tours/:id', async ({ params, request }) => {
+    const body = await request.json() as Record<string, unknown>;
+    return HttpResponse.json({
+      ...mockTour,
+      ...body,
+      id: params.id,
+    });
+  }),
+
+  http.delete('/api/v1/tours/:id', () => {
+    return HttpResponse.json({ message: 'Deleted' });
+  }),
+
+  // Scenes
+  http.get('/api/v1/tours/:tourId/scenes', () => {
+    return HttpResponse.json([mockScene]);
+  }),
+
+  http.post('/api/v1/tours/:tourId/scenes', async ({ request }) => {
+    const body = await request.json() as Record<string, unknown>;
+    return HttpResponse.json({
+      ...mockScene,
+      ...body,
+      id: 'new-scene-id',
+    });
+  }),
+
+  // Hotspots
+  http.get('/api/v1/scenes/:sceneId/hotspots', () => {
+    return HttpResponse.json([mockHotspot]);
+  }),
+
+  http.post('/api/v1/scenes/:sceneId/hotspots', async ({ request }) => {
+    const body = await request.json() as Record<string, unknown>;
+    return HttpResponse.json({
+      ...mockHotspot,
+      ...body,
+      id: 'new-hotspot-id',
+    });
+  }),
+
+  // Analytics
+  http.get('/api/v1/analytics/dashboard', () => {
+    return HttpResponse.json({
+      total_tours: 10,
+      total_views: 1000,
+      total_scenes: 50,
+      storage_used: 500 * 1024 * 1024,
+    });
+  }),
+
+  http.get('/api/v1/analytics/tours/:id', () => {
+    return HttpResponse.json({
+      total_views: 100,
+      unique_visitors: 50,
+      avg_duration: 120,
+      top_scenes: [],
+    });
+  }),
+];
+
+// Setup server
+export const server = setupServer(...handlers);
