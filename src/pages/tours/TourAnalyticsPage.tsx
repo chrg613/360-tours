@@ -65,7 +65,7 @@ import {
   Area,
 } from 'recharts';
 
-const COLORS = ['#5b6ff4', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4'];
+const COLORS = ['#FF5733', '#FFC857', '#10b981', '#f59e0b', '#ef4444', '#FF8A5C'];
 
 interface StatCardProps {
   title: string;

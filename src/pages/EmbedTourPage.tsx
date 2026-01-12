@@ -294,7 +294,7 @@ export function EmbedTourPage() {
 
   // Get branding from tour settings
   const branding = tour.settings?.branding;
-  const primaryColor = branding?.primary_color || '#5b6ff4';
+  const primaryColor = branding?.primary_color || '#FF5733';
 
   return (
     <div className="relative h-screen w-screen bg-black overflow-hidden">

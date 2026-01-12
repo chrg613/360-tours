@@ -238,7 +238,7 @@ export function PanoramaViewer({
             <div class="psv-marker-navigation" style="
               width: ${hotspot.icon_size || 32}px;
               height: ${hotspot.icon_size || 32}px;
-              background-color: ${hotspot.icon_color || '#5b6ff4'};
+              background-color: ${hotspot.icon_color || '#FF5733'};
               border-radius: 50%;
               display: flex;
               align-items: center;
@@ -279,7 +279,7 @@ export function PanoramaViewer({
             <div class="psv-marker-audio" style="
               width: ${hotspot.icon_size || 32}px;
               height: ${hotspot.icon_size || 32}px;
-              background-color: ${hotspot.icon_color || '#8b5cf6'};
+              background-color: ${hotspot.icon_color || '#FF5733'};
               border-radius: 50%;
               display: flex;
               align-items: center;
@@ -320,7 +320,7 @@ export function PanoramaViewer({
             <div class="psv-marker-link" style="
               width: ${hotspot.icon_size || 32}px;
               height: ${hotspot.icon_size || 32}px;
-              background-color: ${hotspot.icon_color || '#0ea5e9'};
+              background-color: ${hotspot.icon_color || '#FF5733'};
               border-radius: 50%;
               display: flex;
               align-items: center;

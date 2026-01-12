@@ -128,7 +128,7 @@ export function HotspotPanel({ sceneId, hotspots, scenes }: HotspotPanelProps) {
                     <div className="flex items-start gap-3">
                       <div
                         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
-                        style={{ backgroundColor: hotspot.icon_color || '#5b6ff4' }}
+                        style={{ backgroundColor: hotspot.icon_color || '#FF5733' }}
                       >
                         <Icon className="h-4 w-4 text-white" />
                       </div>

@@ -567,7 +567,7 @@ export function TourSettingsPanel({
                   <Input
                     id="primary-color"
                     type="color"
-                    value={settings.branding?.primary_color || '#4c4de8'}
+                    value={settings.branding?.primary_color || '#FF5733'}
                     onChange={(e) =>
                       updateSettings({
                         branding: {
@@ -579,7 +579,7 @@ export function TourSettingsPanel({
                     className="w-16 h-10 p-1 cursor-pointer"
                   />
                   <Input
-                    value={settings.branding?.primary_color || '#4c4de8'}
+                    value={settings.branding?.primary_color || '#FF5733'}
                     onChange={(e) =>
                       updateSettings({
                         branding: {
@@ -588,7 +588,7 @@ export function TourSettingsPanel({
                         },
                       })
                     }
-                    placeholder="#4c4de8"
+                    placeholder="#FF5733"
                     className="flex-1"
                   />
                 </div>

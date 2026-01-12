@@ -57,18 +57,20 @@ interface BrandingPanelProps {
 }
 
 const DEFAULT_SETTINGS: BrandingSettings = {
-  primary_color: '#5b6ff4',
-  secondary_color: '#6366f1',
-  accent_color: '#f59e0b',
-  text_color: '#1f2937',
-  background_color: '#ffffff',
-  font_family: 'Inter',
+  primary_color: '#FF5733',
+  secondary_color: '#FFC857',
+  accent_color: '#FF8A5C',
+  text_color: '#0A0A0B',
+  background_color: '#FAFAFA',
+  font_family: 'Satoshi',
   button_style: 'rounded',
   show_watermark: true,
   watermark_position: 'bottom-right',
 };
 
 const FONT_OPTIONS = [
+  { value: 'Satoshi', label: 'Satoshi' },
+  { value: 'Clash Display', label: 'Clash Display' },
   { value: 'Inter', label: 'Inter' },
   { value: 'Roboto', label: 'Roboto' },
   { value: 'Open Sans', label: 'Open Sans' },
@@ -82,9 +84,9 @@ const FONT_OPTIONS = [
 const PRESET_THEMES = [
   {
     name: 'Default',
-    primary: '#5b6ff4',
-    secondary: '#6366f1',
-    accent: '#f59e0b',
+    primary: '#FF5733',
+    secondary: '#FFC857',
+    accent: '#FF8A5C',
   },
   {
     name: 'Ocean',
@@ -105,16 +107,16 @@ const PRESET_THEMES = [
     accent: '#f59e0b',
   },
   {
-    name: 'Royal',
-    primary: '#8b5cf6',
-    secondary: '#a855f7',
-    accent: '#d946ef',
+    name: 'Slate',
+    primary: '#3D3D3D',
+    secondary: '#525252',
+    accent: '#6B6B6B',
   },
   {
-    name: 'Midnight',
-    primary: '#3b82f6',
-    secondary: '#1e40af',
-    accent: '#60a5fa',
+    name: 'Charcoal',
+    primary: '#1A1A1F',
+    secondary: '#2A2A2F',
+    accent: '#3D3D3D',
   },
 ];
 

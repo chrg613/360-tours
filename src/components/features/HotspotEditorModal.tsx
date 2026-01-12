@@ -100,7 +100,7 @@ export function HotspotEditorModal({
   const [position, setPosition] = useState(initialPosition);
   const [iconConfig, setIconConfig] = useState<HotspotIconConfig>({
     iconName: 'arrow-right',
-    iconColor: '#5b6ff4',
+    iconColor: '#FF5733',
     iconSize: 32,
   });
 
@@ -121,7 +121,7 @@ export function HotspotEditorModal({
       setPosition(hotspot.position);
       setIconConfig({
         iconName: hotspot.icon_name || 'arrow-right',
-        iconColor: hotspot.icon_color || '#5b6ff4',
+        iconColor: hotspot.icon_color || '#FF5733',
         iconSize: hotspot.icon_size || 32,
       });
       setAudioUrl((hotspot.content?.audio_url as string) || '');
@@ -137,7 +137,7 @@ export function HotspotEditorModal({
       setPosition(initialPosition);
       setIconConfig({
         iconName: 'arrow-right',
-        iconColor: '#5b6ff4',
+        iconColor: '#FF5733',
         iconSize: 32,
       });
       setAudioUrl('');

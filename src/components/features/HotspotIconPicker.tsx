@@ -117,14 +117,14 @@ const ICON_CATEGORIES = {
 
 // Predefined colors
 const PRESET_COLORS = [
-  '#5b6ff4', // Primary blue
+  '#FF5733', // Primary orange
   '#22c55e', // Green
   '#ef4444', // Red
   '#f59e0b', // Amber
-  '#8b5cf6', // Purple
-  '#06b6d4', // Cyan
+  '#3D3D3D', // Dark grey
+  '#FFC857', // Gold
   '#ec4899', // Pink
-  '#64748b', // Slate
+  '#6B6B6B', // Grey
   '#000000', // Black
   '#ffffff', // White
 ];

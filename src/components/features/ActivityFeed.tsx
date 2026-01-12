@@ -48,7 +48,7 @@ const ACTION_CONFIG: Record<
   updated: {
     icon: <Edit3 className="h-4 w-4" />,
     label: 'Updated',
-    color: 'text-blue-500',
+    color: 'text-[#FF5733]',
   },
   deleted: {
     icon: <Trash2 className="h-4 w-4" />,
@@ -58,7 +58,7 @@ const ACTION_CONFIG: Record<
   commented: {
     icon: <MessageSquare className="h-4 w-4" />,
     label: 'Commented',
-    color: 'text-purple-500',
+    color: 'text-[#6B6B6B]',
   },
   published: {
     icon: <Globe className="h-4 w-4" />,
