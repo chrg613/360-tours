@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import '@photo-sphere-viewer/core/index.css';
 import { cn } from '@/utils';
 
 interface Demo360ViewerProps {
@@ -11,13 +12,14 @@ export function Demo360Viewer({ className }: Demo360ViewerProps) {
 
   useEffect(() => {
     let viewer: unknown;
+    let startDelayTimer: ReturnType<typeof setTimeout> | undefined;
+    let rotateIntervalId: ReturnType<typeof setInterval> | undefined;
 
     const initViewer = async () => {
       if (!containerRef.current || viewerRef.current) return;
 
       try {
         const { Viewer } = await import('@photo-sphere-viewer/core');
-        await import('@photo-sphere-viewer/core/index.css');
 
         viewer = new Viewer({
           container: containerRef.current,
@@ -32,13 +34,12 @@ export function Demo360Viewer({ className }: Demo360ViewerProps) {
 
         viewerRef.current = viewer;
 
-        // Start auto-rotation after a delay
-        setTimeout(() => {
+        startDelayTimer = setTimeout(() => {
           if (viewer && typeof (viewer as { rotate: (options: unknown) => void }).rotate === 'function') {
             let yaw = 0;
-            const rotateInterval = setInterval(() => {
+            rotateIntervalId = setInterval(() => {
               if (!viewerRef.current) {
-                clearInterval(rotateInterval);
+                clearInterval(rotateIntervalId);
                 return;
               }
               yaw += 0.002;
@@ -48,7 +49,7 @@ export function Demo360Viewer({ className }: Demo360ViewerProps) {
                   pitch: 0.1,
                 });
               } catch {
-                clearInterval(rotateInterval);
+                clearInterval(rotateIntervalId);
               }
             }, 16);
           }
@@ -61,6 +62,8 @@ export function Demo360Viewer({ className }: Demo360ViewerProps) {
     initViewer();
 
     return () => {
+      if (startDelayTimer) clearTimeout(startDelayTimer);
+      if (rotateIntervalId) clearInterval(rotateIntervalId);
       if (viewerRef.current && typeof (viewerRef.current as { destroy: () => void }).destroy === 'function') {
         try {
           (viewerRef.current as { destroy: () => void }).destroy();
