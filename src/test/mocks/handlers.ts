@@ -52,21 +52,12 @@ export const mockHotspot = {
 
 // API handlers
 export const handlers = [
-  // Auth
-  http.post('/api/v1/auth/login', () => {
-    return HttpResponse.json({
-      access_token: 'mock-access-token',
-      refresh_token: 'mock-refresh-token',
-      token_type: 'bearer',
-    });
-  }),
-
-  http.post('/api/v1/auth/logout', () => {
-    return HttpResponse.json({ message: 'Logged out' });
-  }),
-
   // Users
   http.get('/api/v1/users/me', () => {
+    return HttpResponse.json(mockUser);
+  }),
+
+  http.get('/api/v1/users/profile/', () => {
     return HttpResponse.json(mockUser);
   }),
 

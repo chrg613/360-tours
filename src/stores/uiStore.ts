@@ -33,6 +33,7 @@ interface UIActions {
 type UIStore = UIState & UIActions;
 
 let toastId = 0;
+const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const generateToastId = () => `toast-${++toastId}`;
 
 export const useUIStore = create<UIStore>()(
@@ -85,13 +86,20 @@ export const useUIStore = create<UIStore>()(
 
         // Auto-remove toast after duration
         if (newToast.duration && newToast.duration > 0) {
-          setTimeout(() => {
+          const timer = setTimeout(() => {
+            toastTimers.delete(id);
             get().removeToast(id);
           }, newToast.duration);
+          toastTimers.set(id, timer);
         }
       },
 
       removeToast: (id) => {
+        const timer = toastTimers.get(id);
+        if (timer) {
+          clearTimeout(timer);
+          toastTimers.delete(id);
+        }
         set((state) => ({
           toasts: state.toasts.filter((t) => t.id !== id),
         }));
@@ -132,8 +140,8 @@ if (typeof window !== 'undefined') {
       if (state?.theme) {
         applyTheme(state.theme);
       }
-    } catch {
-      // Ignore parse errors
+    } catch (error) {
+      console.error('Failed to parse stored theme:', error);
     }
   }
 }

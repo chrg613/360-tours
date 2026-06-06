@@ -7,3 +7,5 @@ export { useLocalStorage } from './useLocalStorage';
 export { useKeyPress, useEscapeKey } from './useKeyPress';
 export { useAIJobWebSocket, useUserNotifications } from './useAIJobWebSocket';
 export type { AIJobUpdate, WebSocketState } from './useAIJobWebSocket';
+export { usePublicTourTracking } from './usePublicTourTracking';
+export { useWebOtp } from './useWebOtp';

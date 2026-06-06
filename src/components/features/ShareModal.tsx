@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Copy,
   Check,
@@ -40,7 +40,6 @@ import {
   downloadQRCodeSVG,
 } from '@/utils/qrCode';
 import { useToast } from '@/hooks/useToast';
-import { cn } from '@/utils';
 
 interface ShareModalProps {
   open: boolean;
@@ -48,6 +47,7 @@ interface ShareModalProps {
   tourId: string;
   tourTitle: string;
   tourDescription?: string;
+  onTrackShare?: (platform: string) => void;
 }
 
 export function ShareModal({
@@ -56,8 +56,11 @@ export function ShareModal({
   tourId,
   tourTitle,
   tourDescription,
+  onTrackShare,
 }: ShareModalProps) {
   const { toast } = useToast();
+  const copiedLinkTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const copiedEmbedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedEmbed, setCopiedEmbed] = useState(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
@@ -87,20 +90,24 @@ export function ShareModal({
   const handleCopyLink = useCallback(async () => {
     const success = await copyToClipboard(shareUrl);
     if (success) {
+      onTrackShare?.('copy_link');
       setCopiedLink(true);
       toast('success', 'Tour link copied to clipboard.', { title: 'Link copied' });
-      setTimeout(() => setCopiedLink(false), 2000);
+      clearTimeout(copiedLinkTimerRef.current);
+      copiedLinkTimerRef.current = setTimeout(() => setCopiedLink(false), 2000);
     }
-  }, [shareUrl, toast]);
+  }, [onTrackShare, shareUrl, toast]);
 
   const handleCopyEmbed = useCallback(async () => {
     const success = await copyToClipboard(embedCode);
     if (success) {
+      onTrackShare?.('other');
       setCopiedEmbed(true);
       toast('success', 'Embed code copied to clipboard.', { title: 'Embed code copied' });
-      setTimeout(() => setCopiedEmbed(false), 2000);
+      clearTimeout(copiedEmbedTimerRef.current);
+      copiedEmbedTimerRef.current = setTimeout(() => setCopiedEmbed(false), 2000);
     }
-  }, [embedCode, toast]);
+  }, [embedCode, onTrackShare, toast]);
 
   const handleDownloadQR = useCallback(
     async (format: 'png' | 'svg') => {
@@ -120,6 +127,7 @@ export function ShareModal({
   );
 
   const handleSocialShare = (platform: keyof typeof socialLinks) => {
+    onTrackShare?.(platform === 'email' ? 'other' : platform);
     window.open(socialLinks[platform], '_blank', 'width=600,height=400');
   };
 

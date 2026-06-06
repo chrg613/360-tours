@@ -1,5 +1,9 @@
-import { apiClient } from './client';
+import axios from 'axios';
+
+import { apiClient, extractData } from './client';
+import { SUPABASE_PUBLISHABLE_KEY, API_TIMEOUT } from '@/constants';
 import type { FileUploadResponse, MediaFile, PaginatedResponse } from '@/types';
+import { supabaseAuth } from '@/lib/supabaseAuth';
 
 export interface UploadOptions {
   folder?: string;
@@ -7,19 +11,25 @@ export interface UploadOptions {
   onProgress?: (progress: number) => void;
 }
 
-/**
- * Helper to extract data from API response.
- * Backend returns data directly (no wrapper), so we just return response.data.
- */
-function extractData<T>(response: { data: T }): T {
-  return response.data;
+export interface PresignedUploadRequestItem {
+  filename: string;
+  content_type?: string;
+  file_size?: number;
+  folder_type?: string;
+  tour_id?: string;
+  visibility?: 'public' | 'private' | 'unlisted';
+}
+
+export interface PresignedUploadResponseItem {
+  upload_id: string;
+  signed_url: string;
+  token: string;
+  path: string;
+  public_url: string;
+  media?: MediaFile | null;
 }
 
 export const uploadApi = {
-  /**
-   * Upload a single file
-   * Backend returns: { file_path, public_url, file_type, file_size, content_type, original_filename }
-   */
   async uploadFile(file: File, options: UploadOptions = {}): Promise<FileUploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
@@ -44,9 +54,6 @@ export const uploadApi = {
     return extractData(response);
   },
 
-  /**
-   * Upload multiple files
-   */
   async uploadFiles(
     files: File[],
     options: UploadOptions = {}
@@ -62,7 +69,7 @@ export const uploadApi = {
       formData.append('visibility', options.visibility);
     }
 
-    const response = await apiClient.post<FileUploadResponse[]>(
+    const response = await apiClient.post<{ items: FileUploadResponse[] }>(
       '/upload/batch',
       formData,
       {
@@ -77,56 +84,83 @@ export const uploadApi = {
         },
       }
     );
-    return extractData(response);
+    return extractData(response).items;
   },
 
-  /**
-   * Get user's media files
-   */
   async getMediaFiles(params?: {
     page?: number;
     page_size?: number;
     folder?: string;
     mime_type?: string;
   }): Promise<PaginatedResponse<MediaFile>> {
-    const response = await apiClient.get<PaginatedResponse<MediaFile>>('/media', {
+    const response = await apiClient.get<PaginatedResponse<MediaFile>>('/upload/media', {
       params,
     });
     return extractData(response);
   },
 
-  /**
-   * Get a single media file
-   */
   async getMediaFile(id: string): Promise<MediaFile> {
-    const response = await apiClient.get<MediaFile>(`/media/${id}`);
+    const response = await apiClient.get<MediaFile>(`/upload/media/${id}`);
     return extractData(response);
   },
 
-  /**
-   * Delete a media file
-   */
   async deleteMediaFile(id: string): Promise<void> {
-    await apiClient.delete(`/media/${id}`);
+    await apiClient.delete(`/upload/media/${id}`);
   },
 
-  /**
-   * Get upload URL for direct upload (presigned URL)
-   */
-  async getUploadUrl(params: {
-    filename: string;
-    content_type: string;
-    folder?: string;
-  }): Promise<{
-    upload_url: string;
-    file_url: string;
-    expires_at: string;
-  }> {
-    const response = await apiClient.post<{
-      upload_url: string;
-      file_url: string;
-      expires_at: string;
-    }>('/upload/presigned', params);
-    return extractData(response);
+  async createPresignedUploads(
+    files: PresignedUploadRequestItem[]
+  ): Promise<PresignedUploadResponseItem[]> {
+    const response = await apiClient.post<{ items: PresignedUploadResponseItem[] }>(
+      '/upload/presigned',
+      { files }
+    );
+    return extractData(response).items;
+  },
+
+  async uploadToSignedUrl(
+    signedUrl: string,
+    file: File,
+    options: { onProgress?: (progress: number) => void } = {}
+  ): Promise<void> {
+    if (!SUPABASE_PUBLISHABLE_KEY) {
+      throw new Error(
+        'Missing Supabase publishable key (VITE_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_ANON_KEY)'
+      );
+    }
+
+    const accessToken = await supabaseAuth.getAccessToken();
+    const authToken = accessToken || SUPABASE_PUBLISHABLE_KEY;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+
+    try {
+      await axios.put(signedUrl, file, {
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${authToken}`,
+          'x-upsert': 'false',
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+        signal: controller.signal,
+        onUploadProgress: (progressEvent) => {
+          if (!options.onProgress) return;
+          const total = progressEvent.total ?? file.size;
+          if (!total) return;
+          const progress = Math.round((progressEvent.loaded * 100) / total);
+          options.onProgress(progress);
+        },
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  },
+
+  async confirmUpload(uploadId: string): Promise<MediaFile> {
+    const response = await apiClient.post<{ media: MediaFile; message: string }>(
+      `/upload/confirm/${uploadId}`
+    );
+    return extractData(response).media;
   },
 };
