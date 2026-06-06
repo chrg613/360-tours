@@ -18,6 +18,8 @@ import {
   Sparkles,
   Wand2,
   Lightbulb,
+  Users,
+  Activity,
 } from 'lucide-react';
 import {
   Button,
@@ -40,10 +42,28 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Avatar,
+  AvatarImage,
+  AvatarFallback,
+  Separator,
 } from '@/components/ui';
 import { toursApi } from '@/api';
 import { QUERY_KEYS, ROUTES } from '@/constants';
-import { useTourEditorStore } from '@/stores';
+import { useTourEditorStore, useCollaborationStore } from '@/stores';
 import { PanoramaViewer } from '@/components/features/PanoramaViewer';
 import { ScenePanel } from '@/components/features/ScenePanel';
 import { HotspotPanel } from '@/components/features/HotspotPanel';
@@ -53,6 +73,7 @@ import { BulkUploader } from '@/components/features/BulkUploader';
 import { BrandingPanel } from '@/components/features/BrandingPanel';
 import { FloorPlanEditor } from '@/components/features/FloorPlanEditor';
 import { SceneAnalysis, DescriptionGenerator, HotspotSuggestions } from '@/components/features/ai';
+import { ActivityFeed } from '@/components/features';
 import { cn } from '@/utils';
 import { useEffect, useState, useCallback } from 'react';
 import { useToast } from '@/hooks/useToast';
@@ -78,6 +99,19 @@ export function TourEditPage() {
   const [isPlacingHotspot, setIsPlacingHotspot] = useState(false);
   const [placementPosition, setPlacementPosition] = useState<{ yaw: number; pitch: number } | null>(null);
   const [showHotspotEditor, setShowHotspotEditor] = useState(false);
+  const [showActivityFeed, setShowActivityFeed] = useState(false);
+  const [showCollaborators, setShowCollaborators] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'editor' | 'viewer'>('viewer');
+  const [isInviting, setIsInviting] = useState(false);
+
+  const {
+    collaborators,
+    fetchActivities,
+    fetchCollaborators,
+    inviteCollaborator,
+    removeCollaborator,
+  } = useCollaborationStore();
 
   const {
     currentTour,
@@ -495,6 +529,122 @@ export function TourEditPage() {
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={() => {
+                    setShowActivityFeed(true);
+                    fetchActivities(id!);
+                  }}
+                >
+                  <Activity className="h-4 w-4" />
+                  Activity
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>View activity feed</TooltipContent>
+            </Tooltip>
+
+            <Popover open={showCollaborators} onOpenChange={(open) => {
+              setShowCollaborators(open);
+              if (open) fetchCollaborators(id!);
+            }}>
+              <PopoverTrigger asChild>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Users className="h-4 w-4" />
+                      Collaborators
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Manage collaborators</TooltipContent>
+                </Tooltip>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-0" align="end">
+                <div className="p-4 space-y-3">
+                  <h4 className="font-semibold text-sm">Collaborators</h4>
+                  <div className="space-y-2">
+                    {collaborators.length === 0 ? (
+                      <p className="text-sm text-[var(--color-text-muted)]">No collaborators yet</p>
+                    ) : (
+                      collaborators.map((c) => (
+                        <div key={c.id} className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Avatar className="h-7 w-7">
+                              <AvatarImage src={c.user?.profile_image_url || undefined} />
+                              <AvatarFallback className="text-xs">
+                                {c.user?.full_name?.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) || '?'}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{c.user?.full_name || c.user?.email || 'Unknown'}</p>
+                              <p className="text-xs text-[var(--color-text-muted)] capitalize">{c.role}</p>
+                            </div>
+                          </div>
+                          {c.role !== 'owner' && (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={async () => {
+                                await removeCollaborator(id!, c.user_id);
+                                toast('success', 'Collaborator removed.', { title: 'Removed' });
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3 text-[var(--color-text-muted)]" />
+                            </Button>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <Separator />
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium">Invite collaborator</p>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Email address"
+                        type="email"
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                      <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as 'editor' | 'viewer')}>
+                        <SelectTrigger className="w-24 h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="viewer">Viewer</SelectItem>
+                          <SelectItem value="editor">Editor</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="w-full"
+                      disabled={!inviteEmail || isInviting}
+                      isLoading={isInviting}
+                      onClick={async () => {
+                        setIsInviting(true);
+                        try {
+                          await inviteCollaborator(id!, inviteEmail, inviteRole);
+                          toast('success', `Invited ${inviteEmail}.`, { title: 'Invitation sent' });
+                          setInviteEmail('');
+                          setInviteRole('viewer');
+                        } catch {
+                          toast('error', 'Could not send invitation.', { title: 'Failed to invite' });
+                        } finally {
+                          setIsInviting(false);
+                        }
+                      }}
+                    >
+                      Send Invitation
+                    </Button>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setShowBulkUploader(true)}
                 >
                   <Upload className="h-4 w-4" />
@@ -782,6 +932,22 @@ export function TourEditPage() {
             initialPosition={placementPosition || { yaw: 0, pitch: 0 }}
           />
         )}
+
+        {/* Activity Feed Sheet */}
+        <Sheet open={showActivityFeed} onOpenChange={setShowActivityFeed}>
+          <SheetContent side="right" className="w-96 p-0">
+            <SheetHeader className="sr-only">
+              <SheetTitle>Activity Feed</SheetTitle>
+              <SheetDescription>Recent activity for this tour</SheetDescription>
+            </SheetHeader>
+            <ActivityFeed
+              tourId={id!}
+              onRefresh={async () => {
+                await fetchActivities(id!);
+              }}
+            />
+          </SheetContent>
+        </Sheet>
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

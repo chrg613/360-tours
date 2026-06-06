@@ -1,6 +1,6 @@
 // User Types
 export interface User {
-  id: number;
+  id: string;
   supabase_user_id: string;
   email: string | null;
   phone: string | null;
@@ -20,13 +20,21 @@ export interface User {
 // Tour Types
 export type TourStatus = 'draft' | 'published' | 'archived';
 
+/**
+ * Tour visibility controls access permissions:
+ * - private: Only the owner can view (requires authentication)
+ * - unlisted: Anyone with the link can view, but not indexed in public listings
+ * - public: Visible in public listings and searchable
+ */
+export type TourVisibility = 'private' | 'unlisted' | 'public';
+
 export interface Tour {
   id: string;
-  user_id: number; // Backend returns integer user_id
+  user_id: string;
   title: string;
   description: string | null;
   status: TourStatus;
-  is_public: boolean;
+  visibility: TourVisibility;
   is_featured: boolean;
   view_count: number;
   like_count: number;
@@ -42,6 +50,20 @@ export interface Tour {
   scene_count?: number;
 }
 
+export interface BrandingSettings {
+  logo_url?: string;
+  primary_color: string;
+  secondary_color: string;
+  accent_color: string;
+  text_color: string;
+  background_color: string;
+  font_family: string;
+  button_style: 'rounded' | 'square' | 'pill';
+  show_watermark: boolean;
+  watermark_position: 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right';
+  custom_css?: string;
+}
+
 export interface TourSettings {
   auto_rotate: boolean;
   auto_rotate_speed: number;
@@ -49,17 +71,14 @@ export interface TourSettings {
   initial_view?: {
     yaw: number;
     pitch: number;
+    zoom?: number;
   };
   show_navbar: boolean;
   enable_fullscreen: boolean;
   enable_vr: boolean;
   enable_gyroscope: boolean;
   gyroscope_auto_start: boolean;
-  branding?: {
-    logo_url?: string;
-    primary_color?: string;
-    show_watermark?: boolean;
-  };
+  branding?: BrandingSettings;
   floor_plans?: FloorPlan[];
 }
 
@@ -104,12 +123,13 @@ export interface TourCreateInput {
   title: string;
   description?: string;
   status?: TourStatus;
-  is_public?: boolean;
+  visibility?: TourVisibility;
   settings?: Partial<TourSettings>;
 }
 
 export interface TourUpdateInput extends Partial<TourCreateInput> {
   is_featured?: boolean;
+  visibility?: TourVisibility;
 }
 
 // Scene Types
@@ -122,7 +142,7 @@ export interface Scene {
   thumbnail_url: string | null;
   vr_url: string | null;
   order_index: number;
-  metadata: SceneMetadata;
+  metadata?: SceneMetadata | null;
   is_processed: boolean;
   processing_error: string | null;
   created_at: string;
@@ -157,7 +177,7 @@ export interface SceneCreateInput {
   metadata?: Partial<SceneMetadata>;
 }
 
-export interface SceneUpdateInput extends Partial<SceneCreateInput> {}
+export type SceneUpdateInput = Partial<SceneCreateInput>;
 
 // Hotspot Types
 export type HotspotType = 'navigation' | 'info' | 'audio' | 'video' | 'link' | 'custom';
@@ -179,7 +199,7 @@ export interface Hotspot {
   icon: string | null;
   icon_name: string | null;
   icon_color: string | null;
-  icon_size: number;
+  icon_size: number | null;
   content: Record<string, unknown> | null;
   custom_data: Record<string, unknown>;
   order_index: number;
@@ -209,6 +229,7 @@ export interface HotspotUpdateInput extends Partial<HotspotCreateInput> {
 // Analytics Types
 export interface TourAnalytics {
   tour_id: string;
+  user_id?: string;
   total_views: number;
   unique_views: number;
   total_likes: number;
@@ -229,6 +250,20 @@ export interface TourAnalytics {
   }>;
 }
 
+export interface HeatmapPoint {
+  scene_id?: string;
+  yaw?: number;
+  pitch?: number;
+  x?: number;
+  y?: number;
+  intensity: number;
+}
+
+export interface TourHeatmapData {
+  tour_id: string;
+  heatmap: HeatmapPoint[];
+}
+
 export interface DashboardStats {
   total_tours: number;
   published_tours: number;
@@ -236,6 +271,15 @@ export interface DashboardStats {
   total_scenes: number;
   storage_used: number;
   storage_limit: number;
+}
+
+export interface DashboardRealtimeStats {
+  active_sessions: number;
+  views_last_hour: number;
+  likes_last_hour: number;
+  shares_last_hour: number;
+  avg_session_duration: number;
+  recent_views: Array<{ date: string; views: number }>;
 }
 
 // API Response Types
@@ -313,25 +357,38 @@ export interface FileUploadResponse {
 // Media Types
 export interface MediaFile {
   id: string;
-  user_id: string;
+  user_id: number;
+  tour_id?: string | null;
   filename: string;
   original_filename: string | null;
   file_url: string;
   thumbnail_url: string | null;
   cdn_url: string | null;
   file_size: number;
+  purpose?: string;
   mime_type: string;
   width: number | null;
   height: number | null;
+  duration?: number | null;
   folder: string | null;
   visibility: 'public' | 'private' | 'unlisted';
   is_processed: boolean;
+  processing_metadata?: Record<string, unknown> | null;
   created_at: string;
+  expires_at?: string | null;
 }
 
 // AI Processing Types
-export type AIJobType = 'tour_generation' | 'scene_detection' | 'hotspot_placement' | 'optimization';
-export type AIJobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type AIJobType =
+  | 'tour_generation'
+  | 'scene_detection'
+  | 'hotspot_suggestions'
+  | 'description_generation'
+  | 'quality_checks'
+  // Accepted for older backend responses while the API is converging on the PRD names.
+  | 'hotspot_placement'
+  | 'optimization';
+export type AIJobStatus = 'queued' | 'pending' | 'processing' | 'completed' | 'failed' | 'canceled';
 
 export interface AIProcessingJob {
   id: string;
@@ -345,8 +402,8 @@ export interface AIProcessingJob {
   error_message: string | null;
   estimated_duration: number | null;
   actual_duration: number | null;
-  processing_started_at: string | null;
-  processing_completed_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
   created_at: string;
   updated_at: string;
 }

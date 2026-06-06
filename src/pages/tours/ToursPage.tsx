@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus,
   Search,
-  Filter,
   MoreVertical,
   Eye,
   Pencil,
@@ -15,6 +14,8 @@ import {
   List,
   Images,
   Clock,
+  Archive,
+  ArchiveRestore,
 } from 'lucide-react';
 import {
   Card,
@@ -69,6 +70,15 @@ export function ToursPage() {
     },
   });
 
+  // Archive/unarchive tour mutation
+  const archiveMutation = useMutation({
+    mutationFn: ({ id, archive }: { id: string; archive: boolean }) =>
+      toursApi.updateTour(id, { status: archive ? 'archived' : 'draft' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.TOURS] });
+    },
+  });
+
   const tours = data?.items || [];
   const totalPages = data?.total_pages || 1;
 
@@ -80,6 +90,11 @@ export function ToursPage() {
 
   const handleDuplicate = async (tour: Tour) => {
     await duplicateMutation.mutateAsync(tour.id);
+  };
+
+  const handleArchive = async (tour: Tour) => {
+    const archive = tour.status !== 'archived';
+    await archiveMutation.mutateAsync({ id: tour.id, archive });
   };
 
   return (
@@ -202,6 +217,7 @@ export function ToursPage() {
               onEdit={() => navigate(`/tours/${tour.id}/edit`)}
               onDelete={() => handleDelete(tour)}
               onDuplicate={() => handleDuplicate(tour)}
+              onArchive={() => handleArchive(tour)}
             />
           ))}
         </div>
@@ -214,6 +230,7 @@ export function ToursPage() {
               onEdit={() => navigate(`/tours/${tour.id}/edit`)}
               onDelete={() => handleDelete(tour)}
               onDuplicate={() => handleDuplicate(tour)}
+              onArchive={() => handleArchive(tour)}
             />
           ))}
         </div>
@@ -253,9 +270,10 @@ interface TourCardProps {
   onEdit: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onArchive: () => void;
 }
 
-function TourCard({ tour, onEdit, onDelete, onDuplicate }: TourCardProps) {
+function TourCard({ tour, onEdit, onDelete, onDuplicate, onArchive }: TourCardProps) {
   const [showMenu, setShowMenu] = useState(false);
 
   return (
@@ -265,6 +283,7 @@ function TourCard({ tour, onEdit, onDelete, onDuplicate }: TourCardProps) {
           <img
             src={tour.thumbnail_url}
             alt={tour.title}
+            loading="lazy"
             className="h-full w-full object-cover transition-transform group-hover:scale-105"
           />
         ) : (
@@ -273,7 +292,7 @@ function TourCard({ tour, onEdit, onDelete, onDuplicate }: TourCardProps) {
           </div>
         )}
         <div className="absolute right-2 top-2">
-          <Badge variant={tour.status === 'published' ? 'success' : 'secondary'}>
+          <Badge variant={tour.status === 'published' ? 'success' : tour.status === 'archived' ? 'warning' : 'secondary'}>
             {tour.status}
           </Badge>
         </div>
@@ -345,6 +364,25 @@ function TourCard({ tour, onEdit, onDelete, onDuplicate }: TourCardProps) {
                       View Live
                     </a>
                   )}
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      onArchive();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-[var(--color-surface)]"
+                  >
+                    {tour.status === 'archived' ? (
+                      <>
+                        <ArchiveRestore className="h-4 w-4" />
+                        Unarchive
+                      </>
+                    ) : (
+                      <>
+                        <Archive className="h-4 w-4" />
+                        Archive
+                      </>
+                    )}
+                  </button>
                   <hr className="my-1 border-[var(--color-border)]" />
                   <button
                     onClick={() => {
@@ -367,7 +405,7 @@ function TourCard({ tour, onEdit, onDelete, onDuplicate }: TourCardProps) {
 }
 
 // Tour List Item Component
-function TourListItem({ tour, onEdit, onDelete, onDuplicate }: TourCardProps) {
+function TourListItem({ tour, onEdit, onDelete, onDuplicate, onArchive }: TourCardProps) {
   return (
     <Card className="transition-shadow hover:shadow-md">
       <CardContent className="flex items-center gap-4 p-4">
@@ -376,6 +414,7 @@ function TourListItem({ tour, onEdit, onDelete, onDuplicate }: TourCardProps) {
             <img
               src={tour.thumbnail_url}
               alt={tour.title}
+              loading="lazy"
               className="h-full w-full object-cover"
             />
           ) : (
@@ -389,7 +428,7 @@ function TourListItem({ tour, onEdit, onDelete, onDuplicate }: TourCardProps) {
             <h3 className="truncate font-semibold text-[var(--color-text-primary)]">
               {tour.title}
             </h3>
-            <Badge variant={tour.status === 'published' ? 'success' : 'secondary'}>
+            <Badge variant={tour.status === 'published' ? 'success' : tour.status === 'archived' ? 'warning' : 'secondary'}>
               {tour.status}
             </Badge>
           </div>
@@ -415,6 +454,9 @@ function TourListItem({ tour, onEdit, onDelete, onDuplicate }: TourCardProps) {
           </Button>
           <Button variant="ghost" size="icon-sm" onClick={onDuplicate}>
             <Copy className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={onArchive} title={tour.status === 'archived' ? 'Unarchive' : 'Archive'}>
+            {tour.status === 'archived' ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
           </Button>
           <Button variant="ghost" size="icon-sm" onClick={onDelete}>
             <Trash2 className="h-4 w-4 text-[var(--color-error-600)]" />

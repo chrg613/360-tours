@@ -1,7 +1,5 @@
-import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { format, subDays } from 'date-fns';
 import {
   Images,
   Eye,
@@ -50,28 +48,14 @@ export function DashboardPage() {
     queryFn: () => toursApi.getTours({ page: 1, page_size: 5 }),
   });
 
+  // Fetch realtime stats (includes recent daily views)
+  const { data: realtimeStats } = useQuery({
+    queryKey: [QUERY_KEYS.DASHBOARD_STATS, 'realtime'],
+    queryFn: () => toursApi.getDashboardRealtime(),
+  });
+
   const recentTours = toursData?.items || [];
-
-  // Generate mock weekly data based on total views
-  // In production, this would come from a dedicated analytics endpoint
-  const viewsData = useMemo(() => {
-    const totalViews = stats?.total_views || 0;
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const today = new Date().getDay();
-
-    // Distribute views across the week with some variation
-    return days.map((day, index) => {
-      const dayIndex = (today + index - 6) % 7;
-      const variation = 0.7 + Math.random() * 0.6; // 70% to 130%
-      const baseViews = totalViews / 7;
-      // More views on weekends
-      const weekendMultiplier = (dayIndex === 0 || dayIndex === 6) ? 1.3 : 1;
-      return {
-        date: day,
-        views: Math.round(baseViews * variation * weekendMultiplier),
-      };
-    });
-  }, [stats?.total_views]);
+  const viewsData = realtimeStats?.recent_views || [];
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -228,6 +212,7 @@ export function DashboardPage() {
                         <img
                           src={tour.thumbnail_url}
                           alt={tour.title}
+                          loading="lazy"
                           className="h-full w-full object-cover"
                         />
                       ) : (

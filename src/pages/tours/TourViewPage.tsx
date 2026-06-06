@@ -1,10 +1,10 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Pencil, Eye, Share2, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Pencil, Share2, BarChart3 } from 'lucide-react';
 import { Button, PageLoader, Badge, Card, CardContent } from '@/components/ui';
 import { toursApi } from '@/api';
 import { QUERY_KEYS, ROUTES } from '@/constants';
-import { formatCompactNumber, formatDate, formatBytes } from '@/utils/format';
+import { formatCompactNumber, formatDate } from '@/utils/format';
 import { PanoramaViewer } from '@/components/features/PanoramaViewer';
 
 export function TourViewPage() {
@@ -142,12 +142,14 @@ export function TourViewPage() {
                     <img
                       src={scene.thumbnail_url}
                       alt={scene.title || 'Scene'}
+                      loading="lazy"
                       className="h-full w-full object-cover"
                     />
                   ) : (
                     <img
                       src={scene.image_url}
                       alt={scene.title || 'Scene'}
+                      loading="lazy"
                       className="h-full w-full object-cover"
                     />
                   )}
@@ -187,7 +189,11 @@ export function TourViewPage() {
             )}
             <div>
               <p className="text-sm text-[var(--color-text-muted)]">Visibility</p>
-              <p className="font-medium">{tour.is_public ? 'Public' : 'Private'}</p>
+              <Badge
+                variant={tour.visibility === 'public' ? 'success' : tour.visibility === 'unlisted' ? 'warning' : 'secondary'}
+              >
+                {tour.visibility === 'public' ? 'Public' : tour.visibility === 'unlisted' ? 'Unlisted' : 'Private'}
+              </Badge>
             </div>
             <div>
               <p className="text-sm text-[var(--color-text-muted)]">Auto Rotate</p>
