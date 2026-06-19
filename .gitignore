@@ -6,6 +6,9 @@
 # Skill files
 *.skill
 
+# Playwright auth state
+e2e/.auth/
+
 # Logs
 logs
 *.log
