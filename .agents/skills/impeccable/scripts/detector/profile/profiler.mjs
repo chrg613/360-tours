@@ -41,14 +41,24 @@ function extractFindingIds(findings) {
 function profileFindings(profile, meta, callback) {
   if (!profile) return callback();
   const started = profileNow();
-  const findings = callback();
-  recordProfileEvent(profile, {
-    ...meta,
-    ms: profileNow() - started,
-    findings: Array.isArray(findings) ? findings.length : 0,
-    findingIds: extractFindingIds(findings),
-  });
-  return findings;
+  try {
+    const findings = callback();
+    recordProfileEvent(profile, {
+      ...meta,
+      ms: profileNow() - started,
+      findings: Array.isArray(findings) ? findings.length : 0,
+      findingIds: extractFindingIds(findings),
+    });
+    return findings;
+  } catch (err) {
+    recordProfileEvent(profile, {
+      ...meta,
+      ms: profileNow() - started,
+      findings: 0,
+      detail: String(err && err.message ? err.message : err),
+    });
+    throw err;
+  }
 }
 
 function profileStep(profile, meta, callback) {
@@ -68,14 +78,24 @@ function profileStep(profile, meta, callback) {
 async function profileFindingsAsync(profile, meta, callback) {
   if (!profile) return callback();
   const started = profileNow();
-  const findings = await callback();
-  recordProfileEvent(profile, {
-    ...meta,
-    ms: profileNow() - started,
-    findings: Array.isArray(findings) ? findings.length : 0,
-    findingIds: extractFindingIds(findings),
-  });
-  return findings;
+  try {
+    const findings = await callback();
+    recordProfileEvent(profile, {
+      ...meta,
+      ms: profileNow() - started,
+      findings: Array.isArray(findings) ? findings.length : 0,
+      findingIds: extractFindingIds(findings),
+    });
+    return findings;
+  } catch (err) {
+    recordProfileEvent(profile, {
+      ...meta,
+      ms: profileNow() - started,
+      findings: 0,
+      detail: String(err && err.message ? err.message : err),
+    });
+    throw err;
+  }
 }
 
 async function profileStepAsync(profile, meta, callback) {

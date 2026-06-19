@@ -72,7 +72,7 @@ function contrastRatio(c1, c2) {
 }
 
 function parseGradientColors(bgImage) {
-  if (!bgImage || !bgImage.includes('gradient')) return [];
+  if (!bgImage || !/gradient/i.test(bgImage)) return [];
   const colors = [];
   for (const m of bgImage.matchAll(/rgba?\([^)]+\)/g)) {
     const c = parseRgb(m[0]);

@@ -40,8 +40,13 @@ async function main() {
 
   writeAuditLog(process.env, result.audit, process.cwd());
 
-  if (result.stdout) process.stdout.write(result.stdout);
-  process.exit(result.exitCode || 0);
+  if (result.stdout) {
+    process.stdout.write(result.stdout, () => {
+      process.exit(result.exitCode || 0);
+    });
+  } else {
+    process.exit(result.exitCode || 0);
+  }
 }
 
 main().catch((err) => {

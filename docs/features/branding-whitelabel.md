@@ -30,7 +30,7 @@ The public player MUST render branding consistently across share links and embed
 
 The editor includes a BrandingPanel dialog with three tabs:
 
-1. **Colors** — Quick preset themes (Default, Ocean, Forest, Sunset, Slate, Charcoal) plus custom color pickers for primary, secondary, accent, and text colors. Button style selector.
+1. **Colors** — Quick preset themes (Default, Ocean, Forest, Sunset, Slate, Charcoal) plus custom color pickers for primary, secondary, accent, text, and background colors. Button style selector.
 2. **Logo** — Upload a custom logo via backend API (Cloudinary). Remove or replace. Accepted formats: PNG, SVG, JPG.
 3. **Typography** — Font family selector with live preview. Available fonts: Satoshi, Clash Display, Inter, Roboto, Open Sans, Lato, Montserrat, Poppins, Playfair Display, Source Sans Pro.
 

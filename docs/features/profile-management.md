@@ -12,7 +12,6 @@ Related docs:
 - Upload and delete profile image.
 - Change password (with current password verification).
 - View usage statistics.
-- Delete account (with password confirmation).
 
 ## Profile fields
 
@@ -29,11 +28,11 @@ Related docs:
 
 ### Upload
 
-`POST /api/v1/users/me/avatar` — multipart/form-data with `file` field.
+`POST /api/v1/users/me/profile-image` — multipart/form-data with `file` field.
 
 ### Delete
 
-`DELETE /api/v1/users/me/avatar`
+`DELETE /api/v1/users/me/profile-image`
 
 ## Password change
 
@@ -44,7 +43,7 @@ Users can change their password by providing their current password for re-authe
 
 ## Usage stats
 
-`GET /api/v1/users/me/usage` returns:
+`GET /api/v1/dashboard/stats` returns:
 
 - Total tours created
 - Published tours count
@@ -54,11 +53,7 @@ Users can change their password by providing their current password for re-authe
 
 ## Account deletion
 
-`DELETE /api/v1/users/me` with `{ "password": "..." }`.
-
-- Requires password confirmation.
-- Soft-deletes the account (sets `deleted_at`).
-- Associated data is retained for a grace period before hard deletion.
+Account deletion is not available as a self-service endpoint. Users must contact support to request account deletion.
 
 **Document Links**:
 - [Dashboard](dashboard.md) → Next

@@ -33,25 +33,21 @@ Supports filtering by folder and MIME type. Returns paginated `MediaFile` object
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | string | Unique identifier |
-| `user_id` | number | Owner |
-| `tour_id` | string | Associated tour (optional) |
+| `user_id` | string | Owner |
+| `purpose` | enum | `tour_scene`, `tour_thumbnail`, `floor_plan`, `hotspot_media`, `branding_logo` |
 | `filename` | string | System-generated filename |
-| `original_filename` | string | Original upload filename |
 | `file_url` | string | Primary storage URL |
 | `thumbnail_url` | string | Thumbnail URL (if processed) |
-| `cdn_url` | string | CDN-optimized URL |
 | `file_size` | number | Size in bytes |
 | `mime_type` | string | MIME type |
 | `width` | number | Image/video width in pixels |
 | `height` | number | Image/video height in pixels |
 | `duration` | number | Duration in seconds (audio/video) |
-| `folder` | string | Virtual folder path |
-| `visibility` | enum | `public`, `private`, or `unlisted` |
-| `is_processed` | boolean | Whether post-upload processing is complete |
+| `created_at` | string | ISO 8601 UTC timestamp |
 
 ## Storage usage
 
-- Users can view their storage usage via `GET /api/v1/users/me/usage`.
+- Users can view their storage usage via `GET /api/v1/dashboard/stats`.
 - Storage usage is calculated by summing `file_size` of all active media files.
 - The backend enforces a per-user storage limit.
 

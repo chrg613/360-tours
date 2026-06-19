@@ -14,7 +14,7 @@ Secondary modules (advanced analytics, floor plans, branding customization) rema
 
 ## Tech Stack
 
-- React 18 + TypeScript
+- React 19 + TypeScript
 - Vite
 - TanStack Query
 - Zustand

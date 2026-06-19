@@ -2,6 +2,11 @@
 
 This section tracks functional behavior for the web app.
 
+## Canonical references
+
+- API contract: `../technical/api-specification.md`
+- Schema conventions: `../00-conventions.md`
+
 ## Core features (implemented)
 
 1. `tour-creation.md` — Tour creation, upload, scene management, duplication

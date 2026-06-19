@@ -24,6 +24,17 @@ This documentation is now organized around core delivery quality:
 - `features/tour-creation.md`
 - `features/hotspots-interactivity.md`
 - `features/player-embed.md`
+- `features/tour-likes.md`
+- `features/tour-duplication.md`
+- `features/custom-hotspot-icons.md`
+- `features/media-library.md`
+- `features/profile-management.md`
+- `features/dashboard.md`
+- `features/social-sharing-analytics.md`
+- `features/analytics.md`
+- `features/floor-plan-integration.md`
+- `features/branding-whitelabel.md`
+- `features/reel-generation.md`
 
 ### AI
 - `ai-features/README.md`

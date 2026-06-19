@@ -39,12 +39,12 @@ Response:
 
 ## Recent tours
 
-The dashboard shows a grid of recent tours with:
+The dashboard shows a vertical list of recent tours with:
 
 - Tour thumbnail
 - Title and status badge
 - View count
-- Quick actions: Edit, View, Share, Delete
+- Each tour links to its detail page (`/tours/:id`)
 
 ## Activity feed
 
