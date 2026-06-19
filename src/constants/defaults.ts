@@ -17,19 +17,6 @@ export const HOTSPOT_TYPES = [
   { value: 'custom', label: 'Custom', icon: 'Code', description: 'Custom HTML or action' },
 ] as const;
 
-// Hotspot Icons
-export const HOTSPOT_ICONS = [
-  { value: 'arrow-right', label: 'Arrow Right' },
-  { value: 'arrow-up', label: 'Arrow Up' },
-  { value: 'arrow-down', label: 'Arrow Down' },
-  { value: 'info', label: 'Info' },
-  { value: 'eye', label: 'Eye' },
-  { value: 'star', label: 'Star' },
-  { value: 'heart', label: 'Heart' },
-  { value: 'camera', label: 'Camera' },
-  { value: 'map-pin', label: 'Map Pin' },
-] as const;
-
 // Default Tour Settings
 export const DEFAULT_TOUR_SETTINGS: TourSettings = {
   auto_rotate: false,

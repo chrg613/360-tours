@@ -56,7 +56,7 @@ type TourStatus = 'draft' | 'published' | 'archived';
 
 interface Tour {
   id: string;
-  owner_id: string;
+  user_id: string;
   title: string;
   description?: string | null;
   status: TourStatus;
@@ -67,11 +67,9 @@ interface Tour {
   settings: TourSettings;
   thumbnail_url?: string | null;
 
-  metrics?: {
-    view_count: number;
-    like_count: number;
-    share_count: number;
-  };
+  view_count?: number;
+  like_count?: number;
+  share_count?: number;
 
   created_at: string;
   updated_at: string;
@@ -101,8 +99,16 @@ interface TourSettings {
 
 interface BrandingSettings {
   logo_url?: string;
-  primary_color?: string; // hex, e.g. "#5b6ff4"
+  primary_color?: string; // hex, e.g. "#FF5733"
+  secondary_color?: string; // hex
+  accent_color?: string; // hex
+  text_color?: string; // hex, default "#0A0A0B"
+  background_color?: string; // hex, default "#FAFAFA"
+  font_family?: string; // e.g. "Satoshi", "Inter", "Roboto"
+  button_style?: 'rounded' | 'square' | 'pill';
   show_watermark?: boolean;
+  watermark_position?: 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right';
+  custom_css?: string;
 }
 ```
 
@@ -118,6 +124,7 @@ interface Scene {
 
   image_url: string;
   thumbnail_url?: string | null;
+  vr_url?: string | null;
 
   order_index: number;
   metadata?: SceneMetadata;
@@ -257,14 +264,14 @@ type MediaPurpose =
 
 interface MediaFile {
   id: string;
-  owner_id: string;
+  user_id: string;
   purpose: MediaPurpose;
   filename: string;
   mime_type: string;
-  byte_size: number;
+  file_size: number;
   width?: number;
   height?: number;
-  duration_seconds?: number;
+  duration?: number;
 
   // Either can be present depending on visibility/security model.
   file_url: string;
@@ -295,6 +302,7 @@ All analytics are built from an append-only `analytics_event` stream.
 interface AnalyticsEvent {
   id: string;
   tour_id: string;
+  user_id?: string;
   session_id: string;
 
   event_type: string;
@@ -324,8 +332,8 @@ type AIJobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'canceled'
 
 interface AIJob {
   id: string;
-  owner_id: string;
-  tour_id?: string;
+  user_id: string;
+  tour_id: string;
   job_type: AIJobType;
   status: AIJobStatus;
   progress?: number; // 0–100
@@ -370,6 +378,14 @@ All non-2xx errors MUST use this shape:
   }
 }
 ```
+
+## Authentication context
+
+- **Auth provider**: Supabase Auth with phone-based OTP.
+- **Primary identifier**: phone number (e.g., `+91XXXXXXXXXX`).
+- **User profile fields**: `full_name`, `email` (optional), `date_of_birth` (optional), `profile_image_url`.
+- **Roles**: `user`, `agent`, `admin`.
+- **Tokens**: Supabase-issued JWT access tokens (short-lived) and refresh tokens.
 
 ## Security and privacy (baseline)
 

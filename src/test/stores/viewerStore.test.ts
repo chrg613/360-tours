@@ -13,6 +13,16 @@ vi.mock('@/api', () => ({
 // Mock @/constants to provide API_BASE_URL
 vi.mock('@/constants', () => ({
   API_BASE_URL: 'http://localhost:3600/api/v1',
+  SUPABASE_URL: 'http://localhost:54321',
+  SUPABASE_PUBLISHABLE_KEY: 'test-key',
+}));
+
+// Mock @/lib/supabaseAuth so usePublicTourTracking's unload beacon can read a
+// session synchronously without initialising a real Supabase client.
+vi.mock('@/lib/supabaseAuth', () => ({
+  supabaseAuth: {
+    getSession: () => null,
+  },
 }));
 
 // ─── viewerStore ────────────────────────────────────────────────────────────────

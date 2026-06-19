@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   Palette,
   Upload,
@@ -33,20 +33,8 @@ import {
 } from '@/components/ui';
 import { uploadApi } from '@/api';
 import { cn } from '@/utils';
-
-export interface BrandingSettings {
-  logo_url?: string;
-  primary_color: string;
-  secondary_color: string;
-  accent_color: string;
-  text_color: string;
-  background_color: string;
-  font_family: string;
-  button_style: 'rounded' | 'square' | 'pill';
-  show_watermark: boolean;
-  watermark_position: 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right';
-  custom_css?: string;
-}
+import { DEFAULT_TOUR_SETTINGS } from '@/constants';
+import type { BrandingSettings } from '@/types';
 
 interface BrandingPanelProps {
   open: boolean;
@@ -57,16 +45,8 @@ interface BrandingPanelProps {
 }
 
 const DEFAULT_SETTINGS: BrandingSettings = {
-  primary_color: '#FF5733',
-  secondary_color: '#FFC857',
-  accent_color: '#FF8A5C',
-  text_color: '#0A0A0B',
-  background_color: '#FAFAFA',
-  font_family: 'Satoshi',
-  button_style: 'rounded',
-  show_watermark: true,
-  watermark_position: 'bottom-right',
-};
+  ...DEFAULT_TOUR_SETTINGS.branding,
+} as BrandingSettings;
 
 const FONT_OPTIONS = [
   { value: 'Satoshi', label: 'Satoshi' },
@@ -134,6 +114,27 @@ export function BrandingPanel({
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Tracks the last fallback object URL (always a 'blob:' URL we created) so it
+  // can be revoked on replace/unmount. Server 'https:' URLs are never stored here.
+  const fallbackUrlRef = useRef<string | null>(null);
+
+  // Revoke the outstanding fallback object URL on unmount
+  useEffect(
+    () => () => {
+      if (fallbackUrlRef.current?.startsWith('blob:')) {
+        URL.revokeObjectURL(fallbackUrlRef.current);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    setSettings({
+      ...DEFAULT_SETTINGS,
+      ...initialSettings,
+    });
+  }, [initialSettings, open]);
 
   const updateSetting = <K extends keyof BrandingSettings>(
     key: K,
@@ -149,15 +150,26 @@ export function BrandingPanel({
     setIsUploadingLogo(true);
 
     try {
-      const response = await uploadApi.uploadFile(file, {
+      const uploadResult = await uploadApi.uploadFile(file, {
         folder: 'branding',
+        visibility: 'public',
       });
-      updateSetting('logo_url', response.public_url);
+      // Revoke a prior fallback blob URL before replacing it with the remote URL.
+      if (fallbackUrlRef.current?.startsWith('blob:')) {
+        URL.revokeObjectURL(fallbackUrlRef.current);
+        fallbackUrlRef.current = null;
+      }
+      updateSetting('logo_url', uploadResult.public_url);
     } catch (error) {
       console.error('Failed to upload logo:', error);
       // Fall back to local URL if upload fails
+      const previousUrl = fallbackUrlRef.current;
       const url = URL.createObjectURL(file);
+      fallbackUrlRef.current = url;
       updateSetting('logo_url', url);
+      if (previousUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(previousUrl);
+      }
     } finally {
       setIsUploadingLogo(false);
       // Reset the input so the same file can be selected again
@@ -166,6 +178,11 @@ export function BrandingPanel({
   };
 
   const handleRemoveLogo = () => {
+    // Revoke a fallback blob URL before clearing the logo.
+    if (fallbackUrlRef.current?.startsWith('blob:')) {
+      URL.revokeObjectURL(fallbackUrlRef.current);
+      fallbackUrlRef.current = null;
+    }
     updateSetting('logo_url', undefined);
   };
 

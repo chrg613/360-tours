@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useUIStore, useAuthStore } from '@/stores';
 import { ROUTES, ERROR_MESSAGES } from '@/constants';
 import type { AxiosError } from 'axios';
@@ -11,7 +10,6 @@ interface ApiError {
 }
 
 export function GlobalErrorHandler() {
-  const navigate = useNavigate();
   const { addToast } = useUIStore();
   const { logout } = useAuthStore();
 
@@ -30,7 +28,7 @@ export function GlobalErrorHandler() {
           message: ERROR_MESSAGES.SESSION_EXPIRED,
         });
         logout();
-        navigate(ROUTES.LOGIN);
+        window.location.href = ROUTES.LOGIN;
         return;
       }
 
@@ -122,7 +120,7 @@ export function GlobalErrorHandler() {
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
       window.removeEventListener('error', handleError);
     };
-  }, [addToast, logout, navigate]);
+  }, [addToast, logout]);
 
   return null;
 }

@@ -5,9 +5,6 @@ import {
   passwordSchema,
   phoneSchema,
   optionalPhoneSchema,
-  loginSchema,
-  registerSchema,
-  forgotPasswordSchema,
   otpSchema,
   resetPasswordSchema,
   tourSchema,
@@ -210,135 +207,6 @@ describe('optionalPhoneSchema', () => {
 
   it('rejects an invalid phone number', () => {
     expect(optionalPhoneSchema.safeParse('12345').success).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// loginSchema
-// ---------------------------------------------------------------------------
-describe('loginSchema', () => {
-  it('accepts valid login data', () => {
-    const result = loginSchema.safeParse({
-      phone: '+919876543210',
-      password: 'anything',
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('rejects missing phone', () => {
-    const result = loginSchema.safeParse({ password: 'anything' });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects empty password', () => {
-    const result = loginSchema.safeParse({
-      phone: '+919876543210',
-      password: '',
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const messages = result.error.issues.map(i => i.message);
-      expect(messages).toContain('Password is required');
-    }
-  });
-
-  it('rejects invalid phone format', () => {
-    const result = loginSchema.safeParse({
-      phone: '12345',
-      password: 'anything',
-    });
-    expect(result.success).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// registerSchema
-// ---------------------------------------------------------------------------
-describe('registerSchema', () => {
-  const validData = {
-    phone: '+919876543210',
-    password: 'Password1',
-    confirm_password: 'Password1',
-    full_name: 'John Doe',
-    email: 'john@example.com',
-  };
-
-  it('accepts valid registration data', () => {
-    expect(registerSchema.safeParse(validData).success).toBe(true);
-  });
-
-  it('accepts without optional fields', () => {
-    const result = registerSchema.safeParse({
-      phone: '+919876543210',
-      password: 'Password1',
-      confirm_password: 'Password1',
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts empty string for full_name and email', () => {
-    const result = registerSchema.safeParse({
-      phone: '+919876543210',
-      password: 'Password1',
-      confirm_password: 'Password1',
-      full_name: '',
-      email: '',
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('rejects when passwords do not match', () => {
-    const result = registerSchema.safeParse({
-      ...validData,
-      confirm_password: 'Different1',
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const messages = result.error.issues.map(i => i.message);
-      expect(messages).toContain('Passwords do not match');
-    }
-  });
-
-  it('rejects a weak password', () => {
-    const result = registerSchema.safeParse({
-      ...validData,
-      password: 'weak',
-      confirm_password: 'weak',
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects full_name shorter than 2 characters when provided', () => {
-    const result = registerSchema.safeParse({
-      ...validData,
-      full_name: 'A',
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects invalid email when provided', () => {
-    const result = registerSchema.safeParse({
-      ...validData,
-      email: 'not-valid',
-    });
-    expect(result.success).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// forgotPasswordSchema
-// ---------------------------------------------------------------------------
-describe('forgotPasswordSchema', () => {
-  it('accepts a valid phone', () => {
-    expect(forgotPasswordSchema.safeParse({ phone: '+919876543210' }).success).toBe(true);
-  });
-
-  it('rejects an invalid phone', () => {
-    expect(forgotPasswordSchema.safeParse({ phone: '12345' }).success).toBe(false);
-  });
-
-  it('rejects empty phone', () => {
-    expect(forgotPasswordSchema.safeParse({ phone: '' }).success).toBe(false);
   });
 });
 
@@ -595,7 +463,7 @@ describe('hotspotSchema', () => {
   });
 
   it('rejects an invalid hotspot type', () => {
-    expect(hotspotSchema.safeParse({ ...validHotspot, type: 'link' }).success).toBe(false);
+    expect(hotspotSchema.safeParse({ ...validHotspot, type: 'invalid_type' }).success).toBe(false);
   });
 
   it('rejects yaw below -180', () => {

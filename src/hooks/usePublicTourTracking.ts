@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toursApi } from '@/api';
 import { API_BASE_URL } from '@/constants';
+import { supabaseAuth } from '@/lib/supabaseAuth';
 
 // Generate a session ID for analytics tracking
 function getSessionId(): string {
@@ -93,17 +94,25 @@ export function usePublicTourTracking({
         event_data: { duration_seconds: durationSeconds },
       };
 
+      // sendBeacon cannot set custom headers; prefer fetch with keepalive
+      // (the modern equivalent that supports Authorization) and fall back to
+      // sendBeacon only when keepalive is unsupported.
+      const accessToken = supabaseAuth.getSession()?.access_token ?? null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+
       try {
-        if (navigator.sendBeacon) {
-          const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-          navigator.sendBeacon(url, blob);
-        } else {
-          fetch(url, {
+        if (typeof Request !== 'undefined' && 'keepalive' in Request.prototype) {
+          void fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(payload),
             keepalive: true,
           });
+        } else if (navigator.sendBeacon) {
+          // Legacy fallback: no Authorization header possible.
+          const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+          navigator.sendBeacon(url, blob);
         }
       } catch {
         // Ignore send failures during unload

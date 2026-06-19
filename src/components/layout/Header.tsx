@@ -1,8 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard,
-  Images,
-  BarChart3,
   Settings,
   Bell,
   Search,
@@ -14,17 +11,9 @@ import {
   Sun,
   ChevronDown,
 } from 'lucide-react';
-import { Button, Avatar, Input } from '@/components/ui';
+import { Button, Avatar } from '@/components/ui';
 import { useAuthStore, useUIStore } from '@/stores';
-import { ROUTES, NAV_ITEMS } from '@/constants';
-import { cn } from '@/utils';
-
-const iconMap = {
-  LayoutDashboard,
-  Images,
-  BarChart3,
-  Settings,
-};
+import { ROUTES } from '@/constants';
 
 export function Header() {
   const navigate = useNavigate();

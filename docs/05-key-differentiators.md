@@ -156,9 +156,9 @@ Unlike competitors who gate features behind paid tiers, 360 Tours provides compl
 | Feature | Competitors | Our Platform |
 |---------|-------------|--------------|
 | **AI Automation** | Paid/None | ✅ Free |
-| **Custom Domain** | Paid tier | ✅ Free |
+| **Custom Domain** | Paid tier | ◷ Coming soon |
 | **Advanced Analytics** | Paid tier | ✅ Free |
-| **White-label** | Paid tier | ✅ Free |
+| **White-label** | Paid tier | ◷ Coming soon |
 | **API Access** | Paid tier | ✅ Free |
 | **360 Ghar Integration** | N/A | ✅ Free |
 
@@ -177,7 +177,7 @@ Unlike competitors who gate features behind paid tiers, 360 Tours provides compl
 ### Global Accessibility
 
 #### India-Specific Features
-- **Language Support**: Hindi, Tamil, Telugu, etc.
+- **Language Support**: Hindi, Tamil, Telugu, etc. (coming soon)
 - **Integration**: Indian real estate platforms (MagicBricks, etc.)
 - **Local Support**: Indian business hours and support team
 

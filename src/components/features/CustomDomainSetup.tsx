@@ -25,7 +25,7 @@ import {
   Alert,
   AlertDescription,
 } from '@/components/ui';
-import { cn } from '@/utils';
+import { copyToClipboard } from '@/utils/copyToClipboard';
 
 interface CustomDomainSetupProps {
   open: boolean;
@@ -69,8 +69,13 @@ export function CustomDomainSetup({
   const [isVerifying, setIsVerifying] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isBusy = isLoading || isAdding || isVerifying || isRemoving;
 
-  // Generate verification code based on domain
+  // Generate verification code based on domain.
+  // SECURITY: The current implementation is deterministic and reversible.
+  // TODO: Move verification code generation to the server-side API endpoint
+  // (POST /domains/verify) so the code is cryptographically random and
+  // cannot be forged by an attacker who knows the domain.
   const verificationCode = domain
     ? `360viewer-verify-${btoa(domain).slice(0, 16)}`
     : '';
@@ -124,19 +129,7 @@ export function CustomDomainSetup({
     }
   };
 
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // Fallback
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-    }
-  };
+
 
   const getVerificationStatusBadge = () => {
     switch (verificationStatus) {
@@ -230,8 +223,9 @@ export function CustomDomainSetup({
                     onChange={(e) => setDomain(e.target.value.toLowerCase())}
                     placeholder="tours.yourcompany.com"
                     className="flex-1"
+                    disabled={isBusy}
                   />
-                  <Button onClick={handleAddDomain} isLoading={isAdding}>
+                  <Button onClick={handleAddDomain} isLoading={isAdding || isLoading} disabled={isBusy}>
                     Add Domain
                   </Button>
                 </div>
@@ -298,7 +292,8 @@ export function CustomDomainSetup({
                       variant="outline"
                       size="sm"
                       onClick={handleVerify}
-                      isLoading={isVerifying}
+                      isLoading={isVerifying || isLoading}
+                      disabled={isBusy}
                     >
                       <RefreshCw className="h-4 w-4" />
                       Check Verification
@@ -307,7 +302,8 @@ export function CustomDomainSetup({
                       variant="outline"
                       size="sm"
                       onClick={handleRemove}
-                      isLoading={isRemoving}
+                      isLoading={isRemoving || isLoading}
+                      disabled={isBusy}
                       className="text-[var(--color-error-500)]"
                     >
                       Remove Domain
@@ -320,7 +316,8 @@ export function CustomDomainSetup({
                     variant="outline"
                     size="sm"
                     onClick={handleRemove}
-                    isLoading={isRemoving}
+                    isLoading={isRemoving || isLoading}
+                    disabled={isBusy}
                     className="text-[var(--color-error-500)]"
                   >
                     Remove Domain

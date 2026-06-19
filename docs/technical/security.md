@@ -88,8 +88,8 @@ Recommended CSP headers for the frontend:
 
 - `default-src 'self'`
 - `script-src 'self'` (no inline scripts)
-- `img-src 'self' <supabase-storage-domain> <cdn-domain>`
-- `connect-src 'self' <api-domain> <supabase-domain>`
+- `img-src 'self' https://res.cloudinary.com <cdn-domain>`
+- `connect-src 'self' <api-domain> <supabase-domain> https://res.cloudinary.com`
 - `frame-ancestors *` (for embed support)
 
 ## Media access control

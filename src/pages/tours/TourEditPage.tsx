@@ -18,8 +18,10 @@ import {
   Sparkles,
   Wand2,
   Lightbulb,
+  Film,
   Users,
   Activity,
+  X,
 } from 'lucide-react';
 import {
   Button,
@@ -72,11 +74,17 @@ import { TourSettingsPanel } from '@/components/features/TourSettingsPanel';
 import { BulkUploader } from '@/components/features/BulkUploader';
 import { BrandingPanel } from '@/components/features/BrandingPanel';
 import { FloorPlanEditor } from '@/components/features/FloorPlanEditor';
-import { SceneAnalysis, DescriptionGenerator, HotspotSuggestions } from '@/components/features/ai';
+import {
+  SceneAnalysis,
+  DescriptionGenerator,
+  HotspotSuggestions,
+  ReelGeneratorModal,
+} from '@/components/features/ai';
 import { ActivityFeed } from '@/components/features';
 import { cn } from '@/utils';
 import { useEffect, useState, useCallback } from 'react';
 import { useToast } from '@/hooks/useToast';
+import { useIsMobile } from '@/hooks';
 import { DEFAULT_TOUR_SETTINGS } from '@/constants';
 import type { BrandingSettings, FloorPlan, HotspotCreateInput, Tour } from '@/types';
 import type { HotspotSuggestion } from '@/api';
@@ -86,6 +94,7 @@ export function TourEditPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
 
   // Local state
   const [showSettings, setShowSettings] = useState(false);
@@ -96,6 +105,7 @@ export function TourEditPage() {
   const [showSceneAnalysis, setShowSceneAnalysis] = useState(false);
   const [showDescriptions, setShowDescriptions] = useState(false);
   const [showHotspotSuggestions, setShowHotspotSuggestions] = useState(false);
+  const [showReelGenerator, setShowReelGenerator] = useState(false);
   const [isPlacingHotspot, setIsPlacingHotspot] = useState(false);
   const [placementPosition, setPlacementPosition] = useState<{ yaw: number; pitch: number } | null>(null);
   const [showHotspotEditor, setShowHotspotEditor] = useState(false);
@@ -122,6 +132,10 @@ export function TourEditPage() {
     setCurrentTour,
     setCurrentScene,
     selectHotspot,
+    updateTourDraft,
+    markAsSaved,
+    undo,
+    redo,
     reset,
   } = useTourEditorStore();
   const currentScene = currentTour?.scenes?.find((s) => s.id === currentSceneId);
@@ -171,6 +185,7 @@ export function TourEditPage() {
       });
     },
     onSuccess: () => {
+      markAsSaved();
       queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.TOUR, id] });
       toast('success', 'Your changes have been saved successfully.', { title: 'Tour saved' });
     },
@@ -182,19 +197,35 @@ export function TourEditPage() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is typing in an input field
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        return;
-      }
-
+      // Save and undo/redo should work even inside input fields.
       // Ctrl/Cmd + S to save
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         if (hasUnsavedChanges) {
           updateMutation.mutate();
         }
+        return;
       }
+      // Undo / redo (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z)
+      if (e.ctrlKey || e.metaKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          undo();
+          return;
+        } else if (k === 'y' || (k === 'z' && e.shiftKey)) {
+          e.preventDefault();
+          redo();
+          return;
+        }
+      }
+
+      // Ignore remaining shortcuts if user is typing in an input field
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
       // Escape to deselect scene or exit hotspot placement mode
       if (e.key === 'Escape') {
         if (isPlacingHotspot) {
@@ -219,6 +250,8 @@ export function TourEditPage() {
     isPlacingHotspot,
     setCurrentScene,
     updateMutation,
+    undo,
+    redo,
   ]);
 
   // Publish tour mutation
@@ -260,6 +293,9 @@ export function TourEditPage() {
       toast('success', 'Your tour has been permanently deleted.', { title: 'Tour deleted' });
       navigate(ROUTES.TOURS);
     },
+    onError: () => {
+      toast('error', 'Could not delete the tour. Please try again.', { title: 'Delete failed' });
+    },
   });
 
   // Handle settings save
@@ -267,11 +303,9 @@ export function TourEditPage() {
     (updates: Partial<Tour>) => {
       if (!currentTour) return;
 
-      // Update local state
-      setCurrentTour({
-        ...currentTour,
-        ...updates,
-      });
+      // Track the draft as an unsaved change so the editor's unsaved-changes
+      // guard (navigation blocker + beforeunload) stays accurate.
+      updateTourDraft(updates);
 
       // Save to server - handle null values for description
       const updatePayload = {
@@ -282,15 +316,17 @@ export function TourEditPage() {
       toursApi
         .updateTour(currentTour.id, updatePayload as Parameters<typeof toursApi.updateTour>[1])
         .then(() => {
+          markAsSaved();
           queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.TOUR, id] });
           toast('success', 'Tour settings have been updated.', { title: 'Settings saved' });
           setShowSettings(false);
         })
         .catch(() => {
+          // Leave hasUnsavedChanges true so the user can retry.
           toast('error', 'Something went wrong. Please try again.', { title: 'Failed to save settings' });
         });
     },
-    [currentTour, id, queryClient, setCurrentTour, toast]
+    [currentTour, id, queryClient, updateTourDraft, markAsSaved, toast]
   );
 
   // Handle preview
@@ -331,16 +367,14 @@ export function TourEditPage() {
     async (settings: Tour['settings'], successTitle: string, successMessage: string) => {
       if (!currentTour || !settings) return;
 
-      setCurrentTour({
-        ...currentTour,
-        settings,
-      });
+      updateTourDraft({ settings });
 
       await toursApi.updateTour(currentTour.id, { settings });
+      markAsSaved();
       queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.TOUR, id] });
       toast('success', successMessage, { title: successTitle });
     },
-    [currentTour, id, queryClient, setCurrentTour, toast]
+    [currentTour, id, queryClient, updateTourDraft, markAsSaved, toast]
   );
 
   const handleBrandingSave = useCallback(
@@ -463,6 +497,18 @@ export function TourEditPage() {
     }
     return () => reset();
   }, [tour, scenes, setCurrentTour, reset]);
+
+  // Recover from a stale scene selection (e.g. the selected scene was deleted).
+  // Initial auto-selection is handled by setCurrentTour in the store, and a null
+  // currentSceneId is an intentional user deselection (Escape), so only recover
+  // when a non-null selection no longer exists in the scenes list.
+  useEffect(() => {
+    const sceneList = currentTour?.scenes;
+    if (!sceneList || !currentSceneId) return;
+    if (!sceneList.some((s) => s.id === currentSceneId)) {
+      setCurrentScene(sceneList[0]?.id ?? null);
+    }
+  }, [currentTour?.scenes, currentSceneId, setCurrentScene]);
 
   if (isLoading) {
     return <PageLoader message="Loading tour..." />;
@@ -748,6 +794,10 @@ export function TourEditPage() {
                   <Lightbulb className="h-4 w-4" />
                   AI Hotspots
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowReelGenerator(true)}>
+                  <Film className="h-4 w-4" />
+                  Create 360 Reel
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => duplicateMutation.mutate()}
@@ -802,6 +852,17 @@ export function TourEditPage() {
                 />
                 {/* Hotspot Placement Mode Indicator & Toggle */}
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
+                  {isPlacingHotspot && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsPlacingHotspot(false)}
+                      className="shadow-lg"
+                    >
+                      <X className="h-4 w-4" />
+                      Cancel
+                    </Button>
+                  )}
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -814,22 +875,26 @@ export function TourEditPage() {
                         )}
                       >
                         <Crosshair className="h-4 w-4" />
-                        {isPlacingHotspot ? 'Click to place' : 'Add Hotspot'}
+                        {isPlacingHotspot
+                          ? isMobile
+                            ? 'Tap to place'
+                            : 'Click to place'
+                          : 'Add Hotspot'}
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
                       {isPlacingHotspot
-                        ? 'Right-click on panorama to place hotspot (Esc to cancel)'
+                        ? isMobile
+                          ? 'Tap on the panorama to place a hotspot (Cancel to exit)'
+                          : 'Click on the panorama to place a hotspot (Esc to cancel)'
                         : 'Enable hotspot placement mode (H)'}
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                {/* Hotspot placement crosshair overlay */}
-                {isPlacingHotspot && (
-                  <div className="absolute inset-0 z-5 pointer-events-none">
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-8 h-8 border-2 border-dashed border-[var(--color-primary-500)] rounded-full animate-pulse" />
-                    </div>
+                {/* Mobile hint banner while placing a hotspot */}
+                {isPlacingHotspot && isMobile && (
+                  <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 rounded-full bg-[var(--color-primary-500)] px-3 py-1 text-xs font-medium text-white shadow-lg">
+                    Tap anywhere on the panorama to drop a hotspot
                   </div>
                 )}
               </>
@@ -906,6 +971,13 @@ export function TourEditPage() {
               scenes={currentTour.scenes ?? []}
               onApply={handleApplyDescriptions}
             />
+
+            <ReelGeneratorModal
+              open={showReelGenerator}
+              onOpenChange={setShowReelGenerator}
+              tourId={currentTour.id}
+              scenes={currentTour.scenes ?? []}
+            />
           </>
         )}
 
@@ -950,8 +1022,18 @@ export function TourEditPage() {
         </Sheet>
 
         {/* Delete Confirmation Dialog */}
-        <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-          <AlertDialogContent>
+        <AlertDialog
+          open={showDeleteDialog}
+          onOpenChange={(open) => {
+            if (deleteMutation.isPending && !open) return;
+            setShowDeleteDialog(open);
+          }}
+        >
+          <AlertDialogContent
+            onEscapeKeyDown={(e) => {
+              if (deleteMutation.isPending) e.preventDefault();
+            }}
+          >
             <AlertDialogHeader>
               <AlertDialogTitle>Delete Tour</AlertDialogTitle>
               <AlertDialogDescription>
@@ -961,9 +1043,13 @@ export function TourEditPage() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
               <AlertDialogAction
-                onClick={() => deleteMutation.mutate()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  deleteMutation.mutate();
+                }}
+                disabled={deleteMutation.isPending}
                 className="bg-[var(--color-error-600)] hover:bg-[var(--color-error-500)]"
               >
                 {deleteMutation.isPending ? 'Deleting...' : 'Delete'}

@@ -1,8 +1,6 @@
 # AI Roadmap
 
-AI is **Post‑MVP** and ships only after the core tour creation + viewer experience is stable.
-
-This roadmap focuses on delivering AI as safe, opt-in, asynchronous jobs.
+AI ships as part of **MVP** and runs as safe, opt-in, asynchronous jobs alongside the core tour creation + viewer experience.
 
 ## Phase 0: Foundations
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -47,8 +47,8 @@ export function AnalyticsPage() {
 
   // Fetch all tours to list them
   const { data: toursData, isLoading: isLoadingTours } = useQuery({
-    queryKey: [QUERY_KEYS.TOURS, { page: 1, page_size: 50, status: 'published' }],
-    queryFn: () => toursApi.getTours({ page: 1, page_size: 50, status: 'published' }),
+    queryKey: [QUERY_KEYS.TOURS, 'analytics', { limit: 50, status: 'published' }],
+    queryFn: () => toursApi.getTours({ limit: 50, status: 'published' }),
   });
 
   // Fetch dashboard stats for overview
@@ -57,7 +57,7 @@ export function AnalyticsPage() {
     queryFn: () => toursApi.getDashboardStats(),
   });
 
-  const tours = toursData?.items || [];
+  const tours = useMemo(() => toursData?.items || [], [toursData]);
 
   // Fetch analytics for the selected tour
   const { data: selectedAnalytics, isLoading: isLoadingAnalytics } = useQuery({
@@ -71,6 +71,7 @@ export function AnalyticsPage() {
   // Auto-select first tour if none selected
   useEffect(() => {
     if (!selectedTourId && tours.length > 0 && !isLoadingTours) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedTourId(tours[0].id);
     }
   }, [selectedTourId, tours, isLoadingTours, setSelectedTourId]);

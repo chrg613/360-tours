@@ -6,23 +6,81 @@ interface Demo360ViewerProps {
   className?: string;
 }
 
+const RESUME_DELAY = 2000;
+const BASE_SPEED_RAD = 0.02;
+
 export function Demo360Viewer({ className }: Demo360ViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<unknown>(null);
 
+  const autoRotateFrameRef = useRef<number | null>(null);
+  const autoRotateLastTimeRef = useRef<number | null>(null);
+  const autoRotateIdleTimeoutRef = useRef<number | null>(null);
+
   useEffect(() => {
     let viewer: unknown;
-    let startDelayTimer: ReturnType<typeof setTimeout> | undefined;
-    let rotateIntervalId: ReturnType<typeof setInterval> | undefined;
+    const container = containerRef.current;
+
+    const stopAutoRotate = () => {
+      if (autoRotateIdleTimeoutRef.current != null) {
+        window.clearTimeout(autoRotateIdleTimeoutRef.current);
+        autoRotateIdleTimeoutRef.current = null;
+      }
+      if (autoRotateFrameRef.current != null) {
+        cancelAnimationFrame(autoRotateFrameRef.current);
+        autoRotateFrameRef.current = null;
+      }
+      autoRotateLastTimeRef.current = null;
+    };
+
+    const startAutoRotate = () => {
+      const currentViewer = viewerRef.current as {
+        getPosition: () => { yaw: number; pitch: number };
+        rotate: (p: { yaw: number; pitch: number }) => void;
+      } | null;
+      if (!currentViewer || autoRotateFrameRef.current != null) return;
+
+      const step = (timestamp: number) => {
+        const v = viewerRef.current as {
+          getPosition: () => { yaw: number; pitch: number };
+          rotate: (p: { yaw: number; pitch: number }) => void;
+        } | null;
+        if (!v) return;
+
+        if (autoRotateLastTimeRef.current == null) {
+          autoRotateLastTimeRef.current = timestamp;
+        }
+
+        const dtSeconds = (timestamp - autoRotateLastTimeRef.current) / 1000;
+        autoRotateLastTimeRef.current = timestamp;
+
+        const position = v.getPosition();
+        v.rotate({
+          yaw: position.yaw + BASE_SPEED_RAD * dtSeconds,
+          pitch: position.pitch,
+        });
+
+        autoRotateFrameRef.current = requestAnimationFrame(step);
+      };
+
+      autoRotateFrameRef.current = requestAnimationFrame(step);
+    };
+
+    const scheduleAutoRotate = () => {
+      stopAutoRotate();
+      autoRotateIdleTimeoutRef.current = window.setTimeout(() => {
+        startAutoRotate();
+      }, RESUME_DELAY);
+    };
 
     const initViewer = async () => {
-      if (!containerRef.current || viewerRef.current) return;
+      if (!container || viewerRef.current) return;
 
       try {
         const { Viewer } = await import('@photo-sphere-viewer/core');
 
         viewer = new Viewer({
-          container: containerRef.current,
+          container,
           panorama: 'https://photo-sphere-viewer-data.netlify.app/assets/sphere.jpg',
           defaultPitch: 0.1,
           defaultYaw: 0,
@@ -33,27 +91,11 @@ export function Demo360Viewer({ className }: Demo360ViewerProps) {
         });
 
         viewerRef.current = viewer;
+        scheduleAutoRotate();
 
-        startDelayTimer = setTimeout(() => {
-          if (viewer && typeof (viewer as { rotate: (options: unknown) => void }).rotate === 'function') {
-            let yaw = 0;
-            rotateIntervalId = setInterval(() => {
-              if (!viewerRef.current) {
-                clearInterval(rotateIntervalId);
-                return;
-              }
-              yaw += 0.002;
-              try {
-                (viewer as { rotate: (options: { yaw: number; pitch: number }) => void }).rotate({
-                  yaw: yaw,
-                  pitch: 0.1,
-                });
-              } catch {
-                clearInterval(rotateIntervalId);
-              }
-            }, 16);
-          }
-        }, 1500);
+        container.addEventListener('pointerdown', scheduleAutoRotate);
+        container.addEventListener('wheel', scheduleAutoRotate, { passive: true });
+        container.addEventListener('touchstart', scheduleAutoRotate, { passive: true });
       } catch (error) {
         console.error('Failed to initialize 360 viewer:', error);
       }
@@ -62,8 +104,10 @@ export function Demo360Viewer({ className }: Demo360ViewerProps) {
     initViewer();
 
     return () => {
-      if (startDelayTimer) clearTimeout(startDelayTimer);
-      if (rotateIntervalId) clearInterval(rotateIntervalId);
+      container?.removeEventListener('pointerdown', scheduleAutoRotate);
+      container?.removeEventListener('wheel', scheduleAutoRotate);
+      container?.removeEventListener('touchstart', scheduleAutoRotate);
+      stopAutoRotate();
       if (viewerRef.current && typeof (viewerRef.current as { destroy: () => void }).destroy === 'function') {
         try {
           (viewerRef.current as { destroy: () => void }).destroy();

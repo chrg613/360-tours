@@ -3,6 +3,7 @@ import { QueryProvider } from '@/lib/queryClient';
 import { router } from '@/lib/router';
 import { Toaster } from '@/components/ui/Toaster';
 import { ErrorBoundary } from '@/components/features/ErrorBoundary';
+import { GlobalErrorHandler, OfflineIndicator } from '@/components/common';
 import { useEffect } from 'react';
 import { useAuthStore } from '@/stores';
 import { useUIStore } from '@/stores';
@@ -65,8 +66,10 @@ export default function App() {
     <ErrorBoundary>
       <QueryProvider>
         <ThemeInitializer />
+        <GlobalErrorHandler />
         <AuthInitializer />
         <Toaster />
+        <OfflineIndicator />
       </QueryProvider>
     </ErrorBoundary>
   );

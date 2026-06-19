@@ -31,15 +31,15 @@ The public player MUST render branding consistently across share links and embed
 The editor includes a BrandingPanel dialog with three tabs:
 
 1. **Colors** — Quick preset themes (Default, Ocean, Forest, Sunset, Slate, Charcoal) plus custom color pickers for primary, secondary, accent, and text colors. Button style selector.
-2. **Logo** — Upload a custom logo via presigned Supabase Storage upload. Remove or replace. Accepted formats: PNG, SVG, JPG.
+2. **Logo** — Upload a custom logo via backend API (Cloudinary). Remove or replace. Accepted formats: PNG, SVG, JPG.
 3. **Typography** — Font family selector with live preview. Available fonts: Satoshi, Clash Display, Inter, Roboto, Open Sans, Lato, Montserrat, Poppins, Playfair Display, Source Sans Pro.
 
 The panel includes a live desktop/mobile preview showing how the branding looks in the viewer.
 
 ## Uploading a logo (MVP)
 
-1. Presign upload: `POST /api/v1/upload/presigned` (folder_type: `branding`, visibility: `public`).
-2. Upload bytes to `signed_url` via `PUT` with Supabase headers.
+1. Upload logo: `POST /api/v1/upload` (multipart form with `file`, `folder: branding`, `visibility: public`).
+2. Receive `public_url` from upload response.
 3. Update tour: `PATCH /api/v1/tours/{tour_id}` with `settings.branding.logo_url`.
 
 ## Watermark behavior

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   Plus,
   Trash2,
@@ -55,8 +55,26 @@ export function FloorPlanEditor({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const imageRef = useRef<HTMLDivElement>(null);
+  // Tracks the last fallback object URL so it can be revoked on replace/unmount
+  const fallbackUrlRef = useRef<string | null>(null);
+
+  // Revoke the outstanding fallback object URL on unmount
+  useEffect(
+    () => () => {
+      if (fallbackUrlRef.current) {
+        URL.revokeObjectURL(fallbackUrlRef.current);
+      }
+    },
+    []
+  );
 
   const selectedFloorPlan = localFloorPlans[selectedFloorIndex];
+
+  useEffect(() => {
+    if (!open) return;
+    setLocalFloorPlans(floorPlans);
+    setSelectedFloorIndex((index) => Math.min(index, Math.max(0, floorPlans.length - 1)));
+  }, [floorPlans, open]);
 
   // Generate unique ID
   const generateId = () => `fp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -100,11 +118,9 @@ export function FloorPlanEditor({
       newFloorPlans[newIndex],
       newFloorPlans[index],
     ];
-    // Update floor numbers
-    newFloorPlans.forEach((fp, i) => {
-      fp.floor_number = i + 1;
-    });
-    setLocalFloorPlans(newFloorPlans);
+    // Update floor numbers (map to new objects to avoid mutating state in place)
+    const renumbered = newFloorPlans.map((fp, i) => ({ ...fp, floor_number: i + 1 }));
+    setLocalFloorPlans(renumbered);
     setSelectedFloorIndex(newIndex);
   };
 
@@ -117,17 +133,40 @@ export function FloorPlanEditor({
     setUploadProgress(0);
 
     try {
-      const response = await uploadApi.uploadFile(file, {
+      const uploadResult = await uploadApi.uploadFile(file, {
         folder: 'floor-plans',
+        visibility: 'public',
         onProgress: (progress) => setUploadProgress(progress),
       });
 
-      updateFloorPlan(selectedFloorIndex, { image_url: response.public_url });
+      // Revoke a prior fallback blob URL before replacing it with the remote URL.
+      const previousFallback = fallbackUrlRef.current;
+      if (
+        previousFallback &&
+        !localFloorPlans.some(
+          (fp, i) => i !== selectedFloorIndex && fp.image_url === previousFallback
+        )
+      ) {
+        URL.revokeObjectURL(previousFallback);
+        fallbackUrlRef.current = null;
+      }
+      updateFloorPlan(selectedFloorIndex, { image_url: uploadResult.public_url });
     } catch (error) {
       console.error('Failed to upload floor plan image:', error);
       // Fall back to local URL if upload fails
+      const previousUrl = fallbackUrlRef.current;
       const url = URL.createObjectURL(file);
+      fallbackUrlRef.current = url;
       updateFloorPlan(selectedFloorIndex, { image_url: url });
+      // Revoke the prior fallback URL, but only if no other floor plan still renders it
+      if (
+        previousUrl &&
+        !localFloorPlans.some(
+          (fp, i) => i !== selectedFloorIndex && fp.image_url === previousUrl
+        )
+      ) {
+        URL.revokeObjectURL(previousUrl);
+      }
     } finally {
       setIsUploading(false);
       setUploadProgress(0);

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 interface UseLocalStorageOptions<T> {
   serializer?: (value: T) => string;
@@ -26,10 +26,21 @@ export function useLocalStorage<T>(
     }
   });
 
+  // Keep a ref that always mirrors the latest storedValue so functional
+  // updates queued in the same tick read the freshest value instead of a
+  // stale closure capture.
+  const storedValueRef = useRef(storedValue);
+  useEffect(() => {
+    storedValueRef.current = storedValue;
+  });
+
   const setValue = useCallback(
     (value: T | ((prev: T) => T)) => {
       try {
-        const valueToStore = value instanceof Function ? value(storedValue) : value;
+        const valueToStore = value instanceof Function ? value(storedValueRef.current) : value;
+        // Update the ref synchronously so consecutive batched updates
+        // in the same tick see the new value immediately.
+        storedValueRef.current = valueToStore;
         setStoredValue(valueToStore);
         if (typeof window !== 'undefined') {
           window.localStorage.setItem(key, serializer(valueToStore));
@@ -38,11 +49,12 @@ export function useLocalStorage<T>(
         console.warn(`Error setting localStorage key "${key}":`, error);
       }
     },
-    [key, serializer, storedValue]
+    [key, serializer]
   );
 
   const removeValue = useCallback(() => {
     try {
+      storedValueRef.current = initialValue;
       setStoredValue(initialValue);
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem(key);
@@ -57,7 +69,9 @@ export function useLocalStorage<T>(
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key === key && event.newValue !== null) {
         try {
-          setStoredValue(deserializer(event.newValue));
+          const next = deserializer(event.newValue);
+          storedValueRef.current = next;
+          setStoredValue(next);
         } catch {
           // Ignore parse errors
         }

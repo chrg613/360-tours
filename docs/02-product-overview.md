@@ -123,7 +123,7 @@ All features are available to all 360 Ghar authenticated users at no cost:
 | | Custom Icons | ✓ |
 | | Labels & Stickers | ✓ |
 | | Floor Plans | ✓ |
-| | Audio Support | ✓ |
+| | Audio Support | ✓² |
 | | Nadir/Zenith Patches | ✓ |
 | **AI Features** | Scene Detection | ✓ |
 | | Auto Hotspot Placement | ✓ |
@@ -131,17 +131,20 @@ All features are available to all 360 Ghar authenticated users at no cost:
 | | Smart Optimization | ✓ |
 | **Branding** | Custom Logo | ✓ |
 | | Brand Colors | ✓ |
-| | Custom Domain | ✓ |
-| | White Label | ✓ |
+| | Custom Domain | ◷¹ |
+| | White Label | ◷¹ |
 | **Sharing** | Direct Links | ✓ |
 | | Embed Codes | ✓ |
 | | Privacy Controls | ✓ |
 | **Analytics** | Basic Stats | ✓ |
-| | Google Analytics | ✓ |
+| | Google Analytics | ◷¹ |
 | | Custom Dashboards | ✓ |
 | **Integrations** | Real Estate Platforms | ✓ |
 | | Social Media | ✓ |
-| | Street View Export | ✓ |
+| | Street View Export | ◷¹ |
+
+¹ Coming in a future release.
+² Audio hotspot playback is supported; background music per tour is coming later.
 
 ## Technical Capabilities
 

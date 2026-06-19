@@ -35,15 +35,39 @@ export function MediaLibraryPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [mimeFilter, setMimeFilter] = useState<string>('all');
-  const [page, setPage] = useState(1);
+  const [cursor, setCursor] = useState<string | null>(null);
+  // Stack of cursors used for previous pages, enabling a "Prev" navigation.
+  const [cursorHistory, setCursorHistory] = useState<string[]>([]);
   const [previewFile, setPreviewFile] = useState<MediaFile | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) =>
+      prev.size === files.length ? new Set() : new Set(files.map((f) => f.id))
+    );
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const resetToFirstPage = () => {
+    setCursor(null);
+    setCursorHistory([]);
+    clearSelection();
+  };
 
   const { data, isLoading } = useQuery({
-    queryKey: [QUERY_KEYS.MEDIA_FILES, { page, search: searchQuery, mime: mimeFilter }],
+    queryKey: [QUERY_KEYS.MEDIA_FILES, { cursor, search: searchQuery, mime: mimeFilter }],
     queryFn: () =>
       uploadApi.getMediaFiles({
-        page,
-        page_size: 24,
+        cursor,
+        limit: 24,
         mime_type: mimeFilter !== 'all' ? mimeFilter : undefined,
       }),
   });
@@ -59,8 +83,43 @@ export function MediaLibraryPage() {
     },
   });
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => uploadApi.deleteMediaFiles(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.MEDIA_FILES] });
+      toast('success', `${selectedIds.size} file(s) deleted.`, { title: 'Deleted' });
+      clearSelection();
+    },
+    onError: (error: Error) => {
+      toast('error', error.message || 'Failed to delete files.', { title: 'Error' });
+    },
+  });
+
+  const handleBulkDelete = async () => {
+    const count = selectedIds.size;
+    if (count === 0) return;
+    if (!confirm(`Delete ${count} selected file(s)?`)) return;
+    await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
+  };
+
   const files = data?.items || [];
-  const totalPages = data?.total_pages || 1;
+  const hasMore = data?.has_more ?? false;
+  const canGoBack = cursorHistory.length > 0;
+
+  const handleNext = () => {
+    if (!data?.next_cursor) return;
+    setCursorHistory((h) => [...h, cursor ?? '']);
+    setCursor(data.next_cursor);
+    clearSelection();
+  };
+
+  const handlePrev = () => {
+    if (cursorHistory.length === 0) return;
+    const prev = cursorHistory[cursorHistory.length - 1];
+    setCursorHistory((h) => h.slice(0, -1));
+    setCursor(prev || null);
+    clearSelection();
+  };
 
   const handleDelete = async (file: MediaFile) => {
     if (confirm(`Delete "${file.original_filename || file.filename}"?`)) {
@@ -94,14 +153,14 @@ export function MediaLibraryPage() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
             <Input
               value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+              onChange={(e) => { setSearchQuery(e.target.value); resetToFirstPage(); }}
               placeholder="Search files..."
               className="pl-10"
             />
           </div>
           <select
             value={mimeFilter}
-            onChange={(e) => { setMimeFilter(e.target.value); setPage(1); }}
+            onChange={(e) => { setMimeFilter(e.target.value); resetToFirstPage(); }}
             className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-500)]"
           >
             <option value="all">All Types</option>
@@ -136,6 +195,36 @@ export function MediaLibraryPage() {
         </div>
       </div>
 
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-0 z-20 flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-4 py-2 shadow">
+          <span className="text-sm font-medium text-[var(--color-text-primary)]">
+            {selectedIds.size} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={toggleSelectAll}>
+              {selectedIds.size === files.length && files.length > 0 ? 'Deselect all' : 'Select all'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={clearSelection}>
+              Clear
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleBulkDelete}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              {bulkDeleteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              Delete
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Content */}
       {isLoading ? (
         <div className={cn(
@@ -166,6 +255,18 @@ export function MediaLibraryPage() {
               key={file.id}
               className="group relative overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] transition-shadow hover:shadow-md"
             >
+              <button
+                onClick={() => toggleSelect(file.id)}
+                className={cn(
+                  'absolute left-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded border transition-colors',
+                  selectedIds.has(file.id)
+                    ? 'border-[var(--color-primary-500)] bg-[var(--color-primary-500)] text-white'
+                    : 'border-white/60 bg-black/40 text-transparent hover:border-white'
+                )}
+                aria-label="Select file"
+              >
+                ✓
+              </button>
               <div
                 className="aspect-square cursor-pointer overflow-hidden bg-[var(--color-surface-elevated)]"
                 onClick={() => setPreviewFile(file)}
@@ -226,6 +327,18 @@ export function MediaLibraryPage() {
           {files.map((file) => (
             <Card key={file.id} className="transition-shadow hover:shadow-md">
               <CardContent className="flex items-center gap-4 p-3">
+                <button
+                  onClick={() => toggleSelect(file.id)}
+                  className={cn(
+                    'flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors',
+                    selectedIds.has(file.id)
+                      ? 'border-[var(--color-primary-500)] bg-[var(--color-primary-500)] text-white'
+                      : 'border-[var(--color-border)] text-transparent hover:border-[var(--color-primary-500)]'
+                  )}
+                  aria-label="Select file"
+                >
+                  ✓
+                </button>
                 <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded bg-[var(--color-surface-elevated)]">
                   {isImage(file.mime_type) ? (
                     <img
@@ -288,25 +401,22 @@ export function MediaLibraryPage() {
         </div>
       )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
+      {/* Pagination (cursor-based Prev / Next) */}
+      {(canGoBack || hasMore) && (
         <div className="flex items-center justify-center gap-2">
           <Button
             variant="outline"
             size="sm"
-            disabled={page === 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={!canGoBack}
+            onClick={handlePrev}
           >
             Previous
           </Button>
-          <span className="text-sm text-[var(--color-text-muted)]">
-            Page {page} of {totalPages}
-          </span>
           <Button
             variant="outline"
             size="sm"
-            disabled={page === totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={!hasMore}
+            onClick={handleNext}
           >
             Next
           </Button>

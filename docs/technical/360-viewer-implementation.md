@@ -94,6 +94,10 @@ Embed is delivered as an iframe URL that accepts these query params:
 - `navbar`: `true|false`
 - `branding`: `true|false`
 - `minimal`: `true|false`
+- `autohide`: `true|false` (auto-hide overlay controls)
+- `fullscreen`: `true|false` (legacy override)
+- `vr`: `true|false` (legacy override)
+- `rotate`: `true|false` (legacy override; forces auto-rotate)
 
 ### postMessage API (MVP)
 

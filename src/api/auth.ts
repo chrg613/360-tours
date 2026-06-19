@@ -1,49 +1,72 @@
-import { apiClient, setTokens, clearTokens } from './client';
+import { apiClient } from './client';
+import { supabaseAuth } from '@/lib/supabaseAuth';
 import type {
   User,
   AuthTokens,
   LoginCredentials,
   RegisterCredentials,
 } from '@/types';
+import type { AuthMethod } from '@/lib/lastAuthMethod';
+
+/** Channel the identifier resolves to (frozen backend contract). */
+export type IdentifierChannel = 'phone' | 'email';
+
+/** Next step the login state-machine should take. */
+export type IdentifierNextStep = 'password' | 'otp';
+
+/** Response shape of POST /api/v1/auth/identifier-status (neutral, rate-limited). */
+export interface IdentifierStatus {
+  exists: boolean;
+  verified: boolean;
+  has_password: boolean;
+  channel: IdentifierChannel;
+  next_step: IdentifierNextStep;
+}
 
 export const authApi = {
   /**
    * Login with phone and password
    */
   async login(credentials: LoginCredentials): Promise<{ user: User; tokens: AuthTokens }> {
-    const response = await apiClient.post<{ access_token: string; token_type: string; user: User }>(
-      '/auth/login/',
-      credentials
-    );
-    const { access_token, user } = response.data;
+    const session = await supabaseAuth.signInWithPassword(credentials);
+    const response = await apiClient.get<User>('/users/me');
+    const user = response.data;
     const tokens: AuthTokens = {
-      access_token,
-      refresh_token: '', // Backend doesn't return refresh token on login
-      expires_in: 3600,
-      token_type: 'bearer',
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_in: session.expires_in,
+      token_type: session.token_type,
     };
-    setTokens(tokens);
     return { user, tokens };
   },
 
   /**
    * Register a new user with phone
    */
-  async register(data: RegisterCredentials): Promise<{ user: User; tokens: AuthTokens }> {
-    const response = await apiClient.post<{ message: string; user: User; access_token: string | null }>(
-      '/auth/register/',
-      data
-    );
-    const { user, access_token } = response.data;
-    const tokens: AuthTokens = {
-      access_token: access_token || '',
-      refresh_token: '',
-      expires_in: 3600,
-      token_type: 'bearer',
-    };
-    if (access_token) {
-      setTokens(tokens);
+  async register(
+    data: RegisterCredentials
+  ): Promise<{ user: User | null; tokens: AuthTokens | null }> {
+    const { session } = await supabaseAuth.signUp({
+      phone: data.phone,
+      password: data.password,
+      data: {
+        full_name: data.full_name ?? null,
+        email: data.email ?? null,
+      },
+    });
+
+    if (!session) {
+      return { user: null, tokens: null };
     }
+
+    const response = await apiClient.get<User>('/users/me');
+    const user = response.data;
+    const tokens: AuthTokens = {
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_in: session.expires_in,
+      token_type: session.token_type,
+    };
     return { user, tokens };
   },
 
@@ -51,60 +74,115 @@ export const authApi = {
    * Logout the current user
    */
   async logout(): Promise<void> {
-    try {
-      await apiClient.post('/auth/logout');
-    } finally {
-      clearTokens();
-    }
+    await supabaseAuth.signOut();
   },
 
   /**
    * Get the current authenticated user
    */
   async getCurrentUser(): Promise<User> {
-    // Backend returns data directly, not wrapped
     const response = await apiClient.get<User>('/users/me');
     return response.data;
   },
 
   /**
-   * Refresh the access token
+   * Login state-machine: resolve an identifier (email or phone) to its auth
+   * status. PUBLIC endpoint — no session required. Drives the
+   * identifier -> password|OTP branching.
    */
-  async refreshToken(refreshToken: string): Promise<AuthTokens> {
-    // Backend returns data directly, not wrapped
-    const response = await apiClient.post<AuthTokens>('/auth/refresh', {
-      refresh_token: refreshToken,
+  async checkIdentifierStatus(identifier: string): Promise<IdentifierStatus> {
+    const response = await apiClient.post<IdentifierStatus>('/auth/identifier-status', {
+      identifier,
     });
-    const tokens = response.data;
-    setTokens(tokens);
-    return tokens;
+    return response.data;
   },
 
   /**
-   * Request password reset email
+   * Record the last successful auth method on the backend (mirrors Supabase
+   * state). AUTH endpoint — requires an established session. Best-effort:
+   * never block the UI on this call.
    */
-  async forgotPassword(email: string): Promise<void> {
-    await apiClient.post('/auth/forgot-password', { email });
+  async recordLastMethod(method: AuthMethod): Promise<void> {
+    try {
+      await apiClient.post('/auth/last-method', { method }, { _skipAuthExpiry: true } as Record<string, unknown>);
+    } catch (error) {
+      console.warn(
+        'Failed to record last auth method (non-critical):',
+        error instanceof Error ? error.message : error
+      );
+    }
   },
 
   /**
-   * Reset password with token
+   * Send an OTP for phone-based password reset (best-effort; avoids user enumeration).
    */
-  async resetPassword(token: string, password: string): Promise<void> {
-    await apiClient.post('/auth/reset-password', { token, password });
+  async requestPasswordResetOTP(phone: string): Promise<void> {
+    // Do not create users via OTP in a reset flow.
+    await supabaseAuth.requestOtp({ phone, shouldCreateUser: false });
   },
 
   /**
-   * Verify email address
+   * Verify a phone OTP to establish a session.
    */
-  async verifyEmail(token: string): Promise<void> {
-    await apiClient.post('/auth/verify-email', { token });
+  async verifyPasswordResetOTP(phone: string, token: string): Promise<AuthTokens> {
+    const session = await supabaseAuth.verifyOtp({ phone, token, type: 'sms' });
+    return {
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_in: session.expires_in,
+      token_type: session.token_type,
+    };
   },
 
   /**
-   * Resend verification email
+   * Send an OTP for email-based password reset (best-effort; avoids user enumeration).
    */
-  async resendVerificationEmail(): Promise<void> {
-    await apiClient.post('/auth/resend-verification');
+  async requestPasswordResetEmailOTP(email: string): Promise<void> {
+    await supabaseAuth.requestEmailOtp({ email, shouldCreateUser: false });
+  },
+
+  /**
+   * Verify an email OTP to establish a session for password reset.
+   */
+  async verifyPasswordResetEmailOTP(email: string, token: string): Promise<AuthTokens> {
+    const session = await supabaseAuth.verifyEmailOtp({ email, token, type: 'email' });
+    return {
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_in: session.expires_in,
+      token_type: session.token_type,
+    };
+  },
+
+  /**
+   * Update the current user's password (requires an authenticated session).
+   */
+  async updatePassword(newPassword: string): Promise<void> {
+    await supabaseAuth.updatePassword(newPassword);
+  },
+
+  /**
+   * Change password by re-authenticating with current password, then updating to a new password.
+   */
+  async changePassword(payload: {
+    phone?: string;
+    email?: string;
+    current_password: string;
+    new_password: string;
+  }): Promise<void> {
+    if (payload.email) {
+      await supabaseAuth.signInWithEmailPassword({
+        email: payload.email,
+        password: payload.current_password,
+      });
+    } else if (payload.phone) {
+      await supabaseAuth.signInWithPassword({
+        phone: payload.phone,
+        password: payload.current_password,
+      });
+    } else {
+      throw new Error('Missing phone or email on your profile');
+    }
+    await supabaseAuth.updatePassword(payload.new_password);
   },
 };

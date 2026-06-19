@@ -25,7 +25,7 @@ Creating professional virtual tours today is:
 A standalone 360° virtual tour platform that:
 - **Automates tour creation** using VLLM (Vision Language Models)
 - **Offers complete feature parity** with Kuula, completely free for 360 Ghar users
-- **Integrates seamlessly** with 360Ghar for enhanced real estate workflows
+- **Integrates seamlessly** with 360 Ghar for enhanced real estate workflows
 - **Provides superior value** through AI-powered efficiency gains
 
 ### Key Innovation: AI-Powered Automatic Tour Creation
@@ -49,13 +49,13 @@ Upload multiple 360 images → AI automatically detects scenes, places hotspots,
 ### Direct Competitors
 | Platform | Strengths | Our Advantage |
 |----------|-----------|---------------|
-| **Kuula** | Established market leader, feature-rich | AI automation, free access, 360Ghar integration |
+| **Kuula** | Established market leader, feature-rich | AI automation, free access, 360 Ghar integration |
 | **Matterport** | High-quality 3D scans, enterprise focus | Free access, easier to use, AI-powered |
 | **Roundme** | Simple interface, creative features | Professional features, better analytics, AI |
 
 ### Differentiation Strategy
 1. **AI Automation**: First to market with automatic tour creation
-2. **Integration**: Deep 360Ghar integration for real estate professionals
+2. **Integration**: Deep 360 Ghar integration for real estate professionals
 3. **Accessibility**: All features free for 360 Ghar users
 4. **Emerging Markets**: Focus on underserved Indian, Southeast Asian markets
 

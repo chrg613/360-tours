@@ -26,29 +26,26 @@ export const optionalPhoneSchema = z
   .optional()
   .or(z.literal(''));
 
-// Login form schema (phone-based)
-export const loginSchema = z.object({
-  phone: phoneSchema,
+// Identifier step of the login state-machine: email OR phone (channel-aware).
+export const emailIdentifierSchema = z.object({
+  identifier: emailSchema,
+});
+export const phoneIdentifierSchema = z.object({
+  identifier: phoneSchema,
+});
+
+// Password step (channel-agnostic — identifier captured in a prior step).
+export const passwordStepSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
-// Register form schema (phone-based)
-export const registerSchema = z
-  .object({
-    phone: phoneSchema,
-    password: passwordSchema,
-    confirm_password: z.string(),
-    full_name: z.string().min(2, 'Name must be at least 2 characters').optional().or(z.literal('')),
-    email: optionalEmailSchema,
-  })
-  .refine(data => data.password === data.confirm_password, {
-    message: 'Passwords do not match',
-    path: ['confirm_password'],
-  });
-
-// Forgot password schema
-export const forgotPasswordSchema = z.object({
-  email: emailSchema,
+// OTP verification schema
+export const otpSchema = z.object({
+  token: z
+    .string()
+    .min(4, 'OTP is required')
+    .max(12, 'OTP is too long')
+    .regex(/^\d+$/, 'OTP must be numeric'),
 });
 
 // Reset password schema
@@ -70,7 +67,7 @@ export const tourSchema = z.object({
     .max(255, 'Title must be less than 255 characters'),
   description: z.string().max(5000, 'Description must be less than 5000 characters').optional(),
   status: z.enum(['draft', 'published', 'archived']).optional(),
-  is_public: z.boolean().optional(),
+  visibility: z.enum(['private', 'unlisted', 'public']).optional(),
   settings: z
     .object({
       auto_rotate: z.boolean().optional(),
@@ -102,7 +99,7 @@ export const sceneSchema = z.object({
 
 // Hotspot schema
 export const hotspotSchema = z.object({
-  type: z.enum(['navigation', 'info', 'audio', 'video', 'custom']),
+  type: z.enum(['navigation', 'info', 'audio', 'video', 'link', 'custom']),
   position: z.object({
     yaw: z.number().min(-180).max(180),
     pitch: z.number().min(-90).max(90),
@@ -182,9 +179,8 @@ export function isValidUUID(id: string): boolean {
 }
 
 // Type exports
-export type LoginFormData = z.infer<typeof loginSchema>;
-export type RegisterFormData = z.infer<typeof registerSchema>;
-export type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>;
+export type OTPFormData = z.infer<typeof otpSchema>;
+export type PasswordStepFormData = z.infer<typeof passwordStepSchema>;
 export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
 export type TourFormData = z.infer<typeof tourSchema>;
 export type SceneFormData = z.infer<typeof sceneSchema>;

@@ -1,40 +1,232 @@
-import { useState } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
+import { useEffect, useState } from 'react';
+import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff, Phone, Lock } from 'lucide-react';
-import { Button, Input } from '@/components/ui';
+import { Eye, EyeOff, Lock, Mail, KeyRound, ArrowLeft } from 'lucide-react';
+import { Button, Input, PhoneInput } from '@/components/ui';
+import { GoogleSignInButton } from '@/components/features';
 import { useAuthStore } from '@/stores';
-import { loginSchema, type LoginFormData } from '@/utils/validation';
+import { authApi, type IdentifierChannel } from '@/api';
+import { supabaseAuth } from '@/lib/supabaseAuth';
+import { useWebOtp, useResendTimer } from '@/hooks';
+import { getLastAuthMethod } from '@/lib/lastAuthMethod';
+import {
+  emailIdentifierSchema,
+  phoneIdentifierSchema,
+  passwordStepSchema,
+  otpSchema,
+  type PasswordStepFormData,
+  type OTPFormData,
+} from '@/utils/validation';
 import { ROUTES } from '@/constants';
+
+type Step = 'identifier' | 'password' | 'otp' | 'set-password';
+type IdentifierFormData = { identifier: string };
+
+function callbackErrorMessage(code: string | null): string | null {
+  if (!code) return null;
+  if (code === 'not_staff') {
+    return 'This account is not authorized to access the 360 Viewer tool. Contact an administrator.';
+  }
+  if (code === 'auth') {
+    return 'Sign-in could not be completed. Please try again.';
+  }
+  return null;
+}
 
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, isLoading, error } = useAuthStore();
-  const [showPassword, setShowPassword] = useState(false);
+  const [searchParams] = useSearchParams();
+  const { loginWithPassword, verifyLoginOtp, setPasswordAndComplete, isLoading, error, setError } =
+    useAuthStore();
 
+  const [step, setStep] = useState<Step>('identifier');
+  const [channel, setChannel] = useState<IdentifierChannel>('phone');
+  const [identifier, setIdentifier] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [stepLoading, setStepLoading] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [isSignupOtp, setIsSignupOtp] = useState(false);
+  // Whether the OTP-authenticated account must set a password (no password yet).
+  const [requiresPasswordSetup, setRequiresPasswordSetup] = useState(false);
+
+  const lastMethod = getLastAuthMethod();
   const from = (location.state as { from?: Location })?.from?.pathname || ROUTES.DASHBOARD;
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginFormData>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: {
-      phone: '',
-      password: '',
-    },
+  // Pre-select the channel from the last-used method on first mount.
+  useEffect(() => {
+    if (lastMethod?.method === 'email_password' || lastMethod?.method === 'email_otp') {
+      setChannel('email');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Surface Google-callback errors (?error=auth | ?error=not_staff).
+  useEffect(() => {
+    const msg = callbackErrorMessage(searchParams.get('error'));
+    if (msg) setLocalError(msg);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const identifierForm = useForm<IdentifierFormData>({
+    resolver: zodResolver(channel === 'email' ? emailIdentifierSchema : phoneIdentifierSchema),
+    defaultValues: { identifier: '' },
   });
 
-  const onSubmit = async (data: LoginFormData) => {
+  const passwordForm = useForm<PasswordStepFormData>({
+    resolver: zodResolver(passwordStepSchema),
+    defaultValues: { password: '' },
+  });
+
+  // Mandatory set-password step after OTP for passwordless accounts.
+  const setPasswordForm = useForm<PasswordStepFormData>({
+    resolver: zodResolver(passwordStepSchema),
+    defaultValues: { password: '' },
+  });
+
+  const otpForm = useForm<OTPFormData>({
+    resolver: zodResolver(otpSchema),
+    defaultValues: { token: '' },
+  });
+
+  // SMS OTP autofill (Android Chrome) — only listens during the phone OTP step.
+  useWebOtp(
+    (code) => otpForm.setValue('token', code, { shouldValidate: true }),
+    step === 'otp' && channel === 'phone'
+  );
+
+  // 30s cooldown for the Resend control on the OTP step.
+  const resendTimer = useResendTimer();
+
+  const displayError = localError ?? error;
+
+  const resetErrors = () => {
+    setLocalError(null);
+    setError(null);
+  };
+
+  const switchChannel = (next: IdentifierChannel) => {
+    if (next === channel) return;
+    setChannel(next);
+    identifierForm.reset({ identifier: '' });
+    resetErrors();
+  };
+
+  // Step 1: resolve the identifier's status, then branch to password or OTP.
+  const onSubmitIdentifier = async (data: IdentifierFormData) => {
+    resetErrors();
+    setStepLoading(true);
     try {
-      await login(data.phone, data.password);
+      const status = await authApi.checkIdentifierStatus(data.identifier);
+      setIdentifier(data.identifier);
+
+      // Safety net: if the backend says OTP but the user is verified with a
+      // password, always route to the password step instead.
+      if (status.next_step === 'password' || (status.verified && status.has_password)) {
+        setStep('password');
+        return;
+      }
+
+      // OTP-first: unverified existing user, or unknown (treat as signup).
+      setIsSignupOtp(!status.exists);
+      // An unknown identifier has no password; an existing account is gated on
+      // has_password. Either way, force a set-password step after OTP succeeds.
+      setRequiresPasswordSetup(!status.exists || !status.has_password);
+      if (channel === 'email') {
+        await supabaseAuth.requestEmailOtp({ email: data.identifier, shouldCreateUser: !status.exists });
+      } else {
+        await supabaseAuth.requestOtp({ phone: data.identifier, shouldCreateUser: !status.exists });
+      }
+      resendTimer.start();
+      setStep('otp');
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Could not continue. Please try again.');
+    } finally {
+      setStepLoading(false);
+    }
+  };
+
+  // Step 2a: verified user — password login.
+  const onSubmitPassword = async (data: PasswordStepFormData) => {
+    resetErrors();
+    try {
+      await loginWithPassword(channel, identifier, data.password);
       navigate(from, { replace: true });
     } catch {
-      // Error is handled by the store
+      // store sets `error`
     }
+  };
+
+  // Step 2b: OTP verification → establishes a session.
+  const onSubmitOtp = async (data: OTPFormData) => {
+    resetErrors();
+    try {
+      await verifyLoginOtp(channel, identifier, data.token);
+      // Passwordless account (has_password===false or unknown identifier):
+      // force a mandatory set-password step before completing login.
+      if (requiresPasswordSetup) {
+        setStep('set-password');
+        return;
+      }
+      navigate(from, { replace: true });
+    } catch {
+      // store sets `error`
+    }
+  };
+
+  // Step 3: mandatory (non-skippable) set-password after OTP for accounts
+  // without a password. Runs against the session just established by the OTP.
+  const onSubmitSetPassword = async (data: PasswordStepFormData) => {
+    resetErrors();
+    try {
+      await setPasswordAndComplete(channel, identifier, data.password);
+      navigate(from, { replace: true });
+    } catch {
+      // store sets `error`
+    }
+  };
+
+  const resendOtp = async () => {
+    if (resendTimer.isCoolingDown) return;
+    resetErrors();
+    setStepLoading(true);
+    try {
+      if (channel === 'email') {
+        await supabaseAuth.requestEmailOtp({ email: identifier, shouldCreateUser: isSignupOtp });
+      } else {
+        await supabaseAuth.requestOtp({ phone: identifier, shouldCreateUser: isSignupOtp });
+      }
+      resendTimer.start();
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Failed to resend the code.');
+    } finally {
+      setStepLoading(false);
+    }
+  };
+
+  const onGoogle = async () => {
+    resetErrors();
+    setGoogleLoading(true);
+    try {
+      await supabaseAuth.signInWithGoogle();
+      // Browser redirects to Google; nothing else runs here on success.
+    } catch (err) {
+      setGoogleLoading(false);
+      setLocalError(err instanceof Error ? err.message : 'Could not start Google sign-in.');
+    }
+  };
+
+  const backToIdentifier = () => {
+    setStep('identifier');
+    setRequiresPasswordSetup(false);
+    passwordForm.reset();
+    setPasswordForm.reset();
+    otpForm.reset();
+    resendTimer.reset();
+    resetErrors();
   };
 
   return (
@@ -44,112 +236,232 @@ export function LoginPage() {
         Sign in to your account to continue
       </p>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-6">
-        {/* Error Message */}
-        {error && (
+      {lastMethod && step === 'identifier' && (
+        <p className="mt-3 text-xs text-[var(--color-text-muted)]">
+          Last used:{' '}
+          <span className="font-medium text-[var(--color-text-secondary)]">
+            {lastMethod.method.replace(/_/g, ' ')}
+          </span>
+          {lastMethod.identifierHint ? ` · ${lastMethod.identifierHint}` : ''}
+        </p>
+      )}
+
+      <div className="mt-6 space-y-6">
+        {displayError && (
           <div className="rounded-lg bg-[var(--color-error-50)] p-3 text-sm text-[var(--color-error-600)]">
-            {error}
+            {displayError}
           </div>
         )}
 
-        {/* Phone */}
-        <div className="relative">
-          <Phone className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
-          <Input
-            {...register('phone')}
-            type="tel"
-            placeholder="Phone number (e.g., +919876543210)"
-            autoComplete="tel"
-            error={errors.phone?.message}
-            className="pl-10"
-          />
-        </div>
+        {/* Step 1: Identifier */}
+        {step === 'identifier' && (
+          <>
+            <GoogleSignInButton onClick={onGoogle} isLoading={googleLoading} disabled={isLoading} />
 
-        {/* Password */}
-        <div className="relative">
-          <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
-          <Input
-            {...register('password')}
-            type={showPassword ? 'text' : 'password'}
-            placeholder="Password"
-            autoComplete="current-password"
-            error={errors.password?.message}
-            className="pl-10 pr-10"
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-          >
-            {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-          </button>
-        </div>
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-[var(--color-border)]" />
+              <span className="text-xs text-[var(--color-text-muted)]">or</span>
+              <div className="h-px flex-1 bg-[var(--color-border)]" />
+            </div>
 
-        {/* Forgot Password Link */}
-        <div className="flex items-center justify-between">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary-600)] focus:ring-[var(--color-primary-500)]"
-            />
-            <span className="text-sm text-[var(--color-text-muted)]">Remember me</span>
-          </label>
-          <Link
-            to={ROUTES.FORGOT_PASSWORD}
-            className="text-sm font-medium text-[var(--color-primary-600)] hover:text-[var(--color-primary-700)]"
-          >
-            Forgot password?
-          </Link>
-        </div>
+            {/* Channel toggle */}
+            <div className="flex rounded-lg border border-[var(--color-border)] p-1 text-sm">
+              <button
+                type="button"
+                onClick={() => switchChannel('phone')}
+                className={
+                  channel === 'phone'
+                    ? 'flex-1 rounded-md bg-[var(--color-primary-600)] py-1.5 font-medium text-white'
+                    : 'flex-1 rounded-md py-1.5 text-[var(--color-text-muted)]'
+                }
+              >
+                Phone
+              </button>
+              <button
+                type="button"
+                onClick={() => switchChannel('email')}
+                className={
+                  channel === 'email'
+                    ? 'flex-1 rounded-md bg-[var(--color-primary-600)] py-1.5 font-medium text-white'
+                    : 'flex-1 rounded-md py-1.5 text-[var(--color-text-muted)]'
+                }
+              >
+                Email
+              </button>
+            </div>
 
-        {/* Submit Button */}
-        <Button type="submit" className="w-full" size="lg" isLoading={isLoading}>
-          Sign in
-        </Button>
+            <form onSubmit={identifierForm.handleSubmit(onSubmitIdentifier)} className="space-y-6">
+              {channel === 'phone' ? (
+                <Controller
+                  name="identifier"
+                  control={identifierForm.control}
+                  render={({ field }) => (
+                    <PhoneInput
+                      name="identifier"
+                      value={field.value}
+                      onChange={field.onChange}
+                      error={identifierForm.formState.errors.identifier?.message}
+                      placeholder="Phone number"
+                      ariaLabel="Phone number"
+                      autoComplete="tel"
+                      required
+                    />
+                  )}
+                />
+              ) : (
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
+                  <Input
+                    {...identifierForm.register('identifier')}
+                    type="email"
+                    placeholder="Email address"
+                    aria-label="Email address"
+                    autoComplete="email"
+                    inputMode="email"
+                    required
+                    error={identifierForm.formState.errors.identifier?.message}
+                    className="pl-10"
+                  />
+                </div>
+              )}
 
-        {/* Divider */}
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-[var(--color-border)]" />
-          </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="bg-[var(--color-background)] px-2 text-[var(--color-text-muted)]">
-              Or continue with
-            </span>
-          </div>
-        </div>
+              <Button type="submit" className="w-full" size="lg" isLoading={stepLoading || isLoading}>
+                Continue
+              </Button>
+            </form>
+          </>
+        )}
 
-        {/* Social Login Buttons */}
-        <div className="grid grid-cols-2 gap-4">
-          <Button type="button" variant="outline" className="w-full">
-            <svg className="h-5 w-5" viewBox="0 0 24 24">
-              <path
-                fill="currentColor"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+        {/* Step 2a: Password */}
+        {step === 'password' && (
+          <form onSubmit={passwordForm.handleSubmit(onSubmitPassword)} className="space-y-6">
+            <div className="rounded-lg bg-[var(--color-surface)] p-3 text-sm text-[var(--color-text-muted)]">
+              Signing in as{' '}
+              <span className="font-medium text-[var(--color-text-primary)]">{identifier}</span>
+            </div>
+
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
+              <Input
+                {...passwordForm.register('password')}
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Password"
+                aria-label="Password"
+                autoComplete="current-password"
+                required
+                error={passwordForm.formState.errors.password?.message}
+                className="pl-10 pr-10"
               />
-              <path
-                fill="currentColor"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              >
+                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
+
+            <div className="flex justify-end">
+              <Link
+                to={ROUTES.FORGOT_PASSWORD}
+                className="text-sm font-medium text-[var(--color-primary-600)] hover:text-[var(--color-primary-700)]"
+              >
+                Forgot password?
+              </Link>
+            </div>
+
+            <div className="flex gap-3">
+              <Button type="button" variant="outline" className="w-full" onClick={backToIdentifier}>
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
+              <Button type="submit" className="w-full" isLoading={isLoading}>
+                Sign in
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {/* Step 2b: OTP */}
+        {step === 'otp' && (
+          <form onSubmit={otpForm.handleSubmit(onSubmitOtp)} className="space-y-6">
+            <div className="rounded-lg bg-[var(--color-surface)] p-3 text-sm text-[var(--color-text-muted)]">
+              Enter the code sent to{' '}
+              <span className="font-medium text-[var(--color-text-primary)]">{identifier}</span>
+            </div>
+
+            <div className="relative">
+              <KeyRound className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
+              <Input
+                {...otpForm.register('token')}
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                placeholder="6-digit code"
+                aria-label="One-time code"
+                error={otpForm.formState.errors.token?.message}
+                className="pl-10"
               />
-              <path
-                fill="currentColor"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+            </div>
+
+            <div className="flex gap-3">
+              <Button type="button" variant="outline" className="w-full" onClick={backToIdentifier}>
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
+              <Button type="submit" className="w-full" isLoading={isLoading}>
+                Verify
+              </Button>
+            </div>
+
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={resendOtp}
+              isLoading={stepLoading}
+              disabled={resendTimer.isCoolingDown}
+            >
+              {resendTimer.isCoolingDown ? `Resend code in ${resendTimer.secondsLeft}s` : 'Resend code'}
+            </Button>
+          </form>
+        )}
+
+        {/* Step 3: Mandatory set-password (non-skippable) for passwordless accounts */}
+        {step === 'set-password' && (
+          <form onSubmit={setPasswordForm.handleSubmit(onSubmitSetPassword)} className="space-y-6">
+            <div className="rounded-lg bg-[var(--color-surface)] p-3 text-sm text-[var(--color-text-muted)]">
+              Set a password to finish securing your account. You&apos;ll use it to sign in next time.
+            </div>
+
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
+              <Input
+                {...setPasswordForm.register('password')}
+                type={showNewPassword ? 'text' : 'password'}
+                placeholder="New password"
+                aria-label="New password"
+                autoComplete="new-password"
+                required
+                error={setPasswordForm.formState.errors.password?.message}
+                className="pl-10 pr-10"
               />
-              <path
-                fill="currentColor"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-              />
-            </svg>
-            Google
-          </Button>
-          <Button type="button" variant="outline" className="w-full">
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-            </svg>
-            Facebook
-          </Button>
-        </div>
-      </form>
+              <button
+                type="button"
+                onClick={() => setShowNewPassword(!showNewPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              >
+                {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
+
+            <Button type="submit" className="w-full" size="lg" isLoading={isLoading}>
+              Set password and continue
+            </Button>
+          </form>
+        )}
+      </div>
     </div>
   );
 }

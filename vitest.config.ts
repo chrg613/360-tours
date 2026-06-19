@@ -24,6 +24,12 @@ export default defineConfig({
         '**/*.config.*',
         '**/index.ts',
       ],
+      thresholds: {
+        statements: 50,
+        branches: 40,
+        functions: 40,
+        lines: 50,
+      },
     },
     css: true,
     alias: {

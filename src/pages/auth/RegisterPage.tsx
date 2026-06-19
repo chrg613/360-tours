@@ -2,47 +2,180 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail, User, KeyRound } from 'lucide-react';
 import { Button, Input, PhoneInput, Checkbox } from '@/components/ui';
-import { useAuthStore } from '@/stores';
-import { registerSchema, type RegisterFormData } from '@/utils/validation';
+import { type IdentifierChannel } from '@/api';
+import { supabaseAuth } from '@/lib/supabaseAuth';
+import { useWebOtp, useResendTimer } from '@/hooks';
+import { maskIdentifier } from '@/lib/lastAuthMethod';
+import {
+  emailIdentifierSchema,
+  phoneIdentifierSchema,
+  passwordSchema,
+  otpSchema,
+  type OTPFormData,
+} from '@/utils/validation';
 import { ROUTES } from '@/constants';
+
+type Step = 'identifier' | 'otp' | 'set-password';
+
+interface IdentifierFormData {
+  identifier: string;
+}
+
+interface SetPasswordFormData {
+  password: string;
+  confirm_password: string;
+}
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const { register: registerUser, isLoading, error } = useAuthStore();
+  const [step, setStep] = useState<Step>('identifier');
+  const [channel, setChannel] = useState<IdentifierChannel>('phone');
+  const [identifier, setIdentifier] = useState('');
+  const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [stepLoading, setStepLoading] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [termsError, setTermsError] = useState<string | null>(null);
 
-  const {
-    register,
-    handleSubmit,
-    control,
-    formState: { errors },
-  } = useForm<RegisterFormData>({
-    resolver: zodResolver(registerSchema),
-    defaultValues: {
-      phone: '',
-      password: '',
-      confirm_password: '',
-      full_name: '',
-      email: '',
-      acceptTerms: false,
-    },
+  const identifierForm = useForm<IdentifierFormData>({
+    resolver: zodResolver(channel === 'email' ? emailIdentifierSchema : phoneIdentifierSchema),
+    defaultValues: { identifier: '' },
   });
 
-  const onSubmit = async (data: RegisterFormData) => {
-    try {
-      await registerUser({
-        phone: data.phone,
-        password: data.password,
-        full_name: data.full_name || undefined,
-        email: data.email || undefined,
-      });
-      navigate(ROUTES.DASHBOARD, { replace: true });
-    } catch {
-      // Error is handled by the store
+  const otpForm = useForm<OTPFormData>({
+    resolver: zodResolver(otpSchema),
+    defaultValues: { token: '' },
+  });
+
+  const setPasswordForm = useForm<SetPasswordFormData>({
+    defaultValues: { password: '', confirm_password: '' },
+  });
+
+  // SMS OTP autofill (Android Chrome) — only listens during the phone OTP step.
+  useWebOtp(
+    (code) => otpForm.setValue('token', code, { shouldValidate: true }),
+    step === 'otp' && channel === 'phone'
+  );
+
+  // 30s cooldown for the Resend control on the OTP step.
+  const resendTimer = useResendTimer();
+
+  const resetErrors = () => {
+    setLocalError(null);
+    setTermsError(null);
+  };
+
+  const switchChannel = (next: IdentifierChannel) => {
+    if (next === channel) return;
+    setChannel(next);
+    identifierForm.reset({ identifier: '' });
+    resetErrors();
+  };
+
+  // Step 1: Collect identifier + name, then send OTP.
+  const onSubmitIdentifier = async (data: IdentifierFormData) => {
+    resetErrors();
+
+    if (!fullName.trim()) {
+      setLocalError('Full name is required.');
+      return;
     }
+
+    if (!acceptTerms) {
+      setTermsError('You must accept the Terms of Service and Privacy Policy');
+      return;
+    }
+
+    setStepLoading(true);
+    try {
+      if (channel === 'email') {
+        await supabaseAuth.requestEmailOtp({ email: data.identifier, shouldCreateUser: true });
+      } else {
+        await supabaseAuth.requestOtp({ phone: data.identifier, shouldCreateUser: true });
+      }
+      setIdentifier(data.identifier);
+      resendTimer.start();
+      setStep('otp');
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Could not send OTP. Please try again.');
+    } finally {
+      setStepLoading(false);
+    }
+  };
+
+  // Step 2: Verify OTP → establishes a session for the new account.
+  const onSubmitOtp = async (data: OTPFormData) => {
+    resetErrors();
+    setStepLoading(true);
+    try {
+      if (channel === 'email') {
+        await supabaseAuth.verifyEmailOtp({ email: identifier, token: data.token, type: 'email' });
+      } else {
+        await supabaseAuth.verifyOtp({ phone: identifier, token: data.token, type: 'sms' });
+      }
+      // OTP verified — session established. Move to set-password step.
+      setStep('set-password');
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Invalid or expired OTP. Please try again.');
+    } finally {
+      setStepLoading(false);
+    }
+  };
+
+  // Step 3: Set password on the OTP-authenticated session.
+  const onSubmitSetPassword = async (data: SetPasswordFormData) => {
+    resetErrors();
+
+    if (data.password !== data.confirm_password) {
+      setLocalError('Passwords do not match.');
+      return;
+    }
+
+    const pwResult = passwordSchema.safeParse(data.password);
+    if (!pwResult.success) {
+      setLocalError(pwResult.error.issues[0]?.message ?? 'Password does not meet requirements.');
+      return;
+    }
+
+    setStepLoading(true);
+    try {
+      await supabaseAuth.updatePassword(data.password);
+      navigate(ROUTES.DASHBOARD, { replace: true });
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Failed to set password. Please try again.');
+    } finally {
+      setStepLoading(false);
+    }
+  };
+
+  const resendOtp = async () => {
+    if (resendTimer.isCoolingDown) return;
+    resetErrors();
+    setStepLoading(true);
+    try {
+      if (channel === 'email') {
+        await supabaseAuth.requestEmailOtp({ email: identifier, shouldCreateUser: true });
+      } else {
+        await supabaseAuth.requestOtp({ phone: identifier, shouldCreateUser: true });
+      }
+      resendTimer.start();
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Failed to resend the code.');
+    } finally {
+      setStepLoading(false);
+    }
+  };
+
+  const backToIdentifier = () => {
+    setStep('identifier');
+    otpForm.reset();
+    setPasswordForm.reset();
+    resendTimer.reset();
+    resetErrors();
   };
 
   return (
@@ -52,150 +185,242 @@ export function RegisterPage() {
         Start creating stunning virtual tours today
       </p>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-5">
-        {/* Error Message */}
-        {error && (
+      <div className="mt-6 space-y-6">
+        {localError && (
           <div className="rounded-lg bg-[var(--color-error-50)] p-3 text-sm text-[var(--color-error-600)]">
-            {error}
+            {localError}
           </div>
         )}
 
-        {/* Phone (Required) */}
-        <Controller
-          name="phone"
-          control={control}
-          render={({ field }) => (
-            <PhoneInput
-              name="phone"
-              value={field.value}
-              onChange={field.onChange}
-              error={errors.phone?.message}
-              placeholder="Phone number"
-              ariaLabel="Phone number"
-              autoComplete="tel"
-              required
-            />
-          )}
-        />
+        {/* Step 1: Identifier + Name + Terms */}
+        {step === 'identifier' && (
+          <>
+            {/* Channel toggle */}
+            <div className="flex rounded-lg border border-[var(--color-border)] p-1 text-sm">
+              <button
+                type="button"
+                onClick={() => switchChannel('phone')}
+                className={
+                  channel === 'phone'
+                    ? 'flex-1 rounded-md bg-[var(--color-primary-600)] py-1.5 font-medium text-white'
+                    : 'flex-1 rounded-md py-1.5 text-[var(--color-text-muted)]'
+                }
+              >
+                Phone
+              </button>
+              <button
+                type="button"
+                onClick={() => switchChannel('email')}
+                className={
+                  channel === 'email'
+                    ? 'flex-1 rounded-md bg-[var(--color-primary-600)] py-1.5 font-medium text-white'
+                    : 'flex-1 rounded-md py-1.5 text-[var(--color-text-muted)]'
+                }
+              >
+                Email
+              </button>
+            </div>
 
-        {/* Full Name (Optional) */}
-        <div className="relative">
-          <User className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
-          <Input
-            {...register('full_name')}
-            type="text"
-            placeholder="Full name (optional)"
-            aria-label="Full name"
-            autoComplete="name"
-            error={errors.full_name?.message}
-            className="pl-10"
-          />
-        </div>
-
-        {/* Email (Optional) */}
-        <div className="relative">
-          <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
-          <Input
-            {...register('email')}
-            type="email"
-            placeholder="Email address (optional)"
-            aria-label="Email address"
-            autoComplete="email"
-            error={errors.email?.message}
-            className="pl-10"
-          />
-        </div>
-
-        {/* Password */}
-        <div className="relative">
-          <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
-          <Input
-            {...register('password')}
-            type={showPassword ? 'text' : 'password'}
-            placeholder="Password"
-            aria-label="Password"
-            autoComplete="new-password"
-            required
-            error={errors.password?.message}
-            className="pl-10 pr-10"
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-          >
-            {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-          </button>
-        </div>
-
-        {/* Confirm Password */}
-        <div className="relative">
-          <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
-          <Input
-            {...register('confirm_password')}
-            type={showConfirmPassword ? 'text' : 'password'}
-            placeholder="Confirm password"
-            aria-label="Confirm password"
-            autoComplete="new-password"
-            required
-            error={errors.confirm_password?.message}
-            className="pl-10 pr-10"
-          />
-          <button
-            type="button"
-            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-          >
-            {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-          </button>
-        </div>
-
-        {/* Terms */}
-        <div>
-          <div className="flex items-start gap-2">
-            <Controller
-              name="acceptTerms"
-              control={control}
-              render={({ field }) => (
-                <Checkbox
-                  id="acceptTerms"
-                  className="mt-0.5"
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
+            <form onSubmit={identifierForm.handleSubmit(onSubmitIdentifier)} className="space-y-5">
+              {/* Full Name */}
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
+                <Input
+                  type="text"
+                  placeholder="Full name"
+                  aria-label="Full name"
+                  autoComplete="name"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="pl-10"
                 />
-              )}
-            />
-            <label htmlFor="acceptTerms" className="text-sm text-[var(--color-text-muted)]">
-              I agree to the{' '}
-              <a
-                href="https://360ghar.com/policies/terms-of-service"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[var(--color-primary-600)] hover:underline"
-              >
-                Terms of Service
-              </a>{' '}
-              and{' '}
-              <a
-                href="https://360ghar.com/policies/privacy-policy"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[var(--color-primary-600)] hover:underline"
-              >
-                Privacy Policy
-              </a>
-            </label>
-          </div>
-          {errors.acceptTerms?.message && (
-            <p className="mt-1 text-sm text-[var(--color-error-600)]">{errors.acceptTerms.message}</p>
-          )}
-        </div>
+              </div>
 
-        {/* Submit Button */}
-        <Button type="submit" className="w-full" size="lg" isLoading={isLoading}>
-          Create account
-        </Button>
-      </form>
+              {/* Phone or Email */}
+              {channel === 'phone' ? (
+                <Controller
+                  name="identifier"
+                  control={identifierForm.control}
+                  render={({ field }) => (
+                    <PhoneInput
+                      name="identifier"
+                      value={field.value}
+                      onChange={field.onChange}
+                      error={identifierForm.formState.errors.identifier?.message}
+                      placeholder="Phone number"
+                      ariaLabel="Phone number"
+                      autoComplete="tel"
+                      required
+                    />
+                  )}
+                />
+              ) : (
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
+                  <Input
+                    {...identifierForm.register('identifier')}
+                    type="email"
+                    placeholder="Email address"
+                    aria-label="Email address"
+                    autoComplete="email"
+                    inputMode="email"
+                    required
+                    error={identifierForm.formState.errors.identifier?.message}
+                    className="pl-10"
+                  />
+                </div>
+              )}
+
+              {/* Terms */}
+              <div>
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="acceptTerms"
+                    className="mt-0.5"
+                    checked={acceptTerms}
+                    onCheckedChange={(checked) => {
+                      setAcceptTerms(checked === true);
+                      if (checked) setTermsError(null);
+                    }}
+                  />
+                  <label htmlFor="acceptTerms" className="text-sm text-[var(--color-text-muted)]">
+                    I agree to the{' '}
+                    <a
+                      href="https://360ghar.com/policies/terms-of-service"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[var(--color-primary-600)] hover:underline"
+                    >
+                      Terms of Service
+                    </a>{' '}
+                    and{' '}
+                    <a
+                      href="https://360ghar.com/policies/privacy-policy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[var(--color-primary-600)] hover:underline"
+                    >
+                      Privacy Policy
+                    </a>
+                  </label>
+                </div>
+                {termsError && (
+                  <p className="mt-1 text-sm text-[var(--color-error-600)]">{termsError}</p>
+                )}
+              </div>
+
+              <Button type="submit" className="w-full" size="lg" isLoading={stepLoading}>
+                Send verification code
+              </Button>
+            </form>
+          </>
+        )}
+
+        {/* Step 2: OTP verification */}
+        {step === 'otp' && (
+          <form onSubmit={otpForm.handleSubmit(onSubmitOtp)} className="space-y-6">
+            <div className="rounded-lg bg-[var(--color-surface)] p-3 text-sm text-[var(--color-text-muted)]">
+              Enter the code sent to{' '}
+              <span className="font-medium text-[var(--color-text-primary)]">{identifier}</span>
+            </div>
+
+            <div className="relative">
+              <KeyRound className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
+              <Input
+                {...otpForm.register('token')}
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                placeholder="6-digit code"
+                aria-label="One-time code"
+                error={otpForm.formState.errors.token?.message}
+                className="pl-10"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <Button type="button" variant="outline" className="w-full" onClick={backToIdentifier}>
+                Back
+              </Button>
+              <Button type="submit" className="w-full" isLoading={stepLoading}>
+                Verify
+              </Button>
+            </div>
+
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={resendOtp}
+              isLoading={stepLoading}
+              disabled={resendTimer.isCoolingDown}
+            >
+              {resendTimer.isCoolingDown ? `Resend code in ${resendTimer.secondsLeft}s` : 'Resend code'}
+            </Button>
+          </form>
+        )}
+
+        {/* Step 3: Set password */}
+        {step === 'set-password' && (
+          <form
+            onSubmit={setPasswordForm.handleSubmit(onSubmitSetPassword)}
+            className="space-y-6"
+          >
+            <div className="rounded-lg bg-[var(--color-surface)] p-3 text-sm text-[var(--color-text-muted)]">
+              Set a password to finish securing{' '}
+              <span className="font-medium text-[var(--color-text-primary)]">
+                {maskIdentifier(identifier) ?? 'your account'}
+              </span>
+              .
+            </div>
+
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
+              <Input
+                {...setPasswordForm.register('password')}
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Password"
+                aria-label="Password"
+                autoComplete="new-password"
+                required
+                className="pl-10 pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              >
+                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
+
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
+              <Input
+                {...setPasswordForm.register('confirm_password')}
+                type={showConfirmPassword ? 'text' : 'password'}
+                placeholder="Confirm password"
+                aria-label="Confirm password"
+                autoComplete="new-password"
+                required
+                className="pl-10 pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              >
+                {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
+
+            <Button type="submit" className="w-full" size="lg" isLoading={stepLoading}>
+              Create account
+            </Button>
+          </form>
+        )}
+      </div>
     </div>
   );
 }

@@ -43,13 +43,9 @@ import {
   downloadAnalyticsCSV,
   downloadAnalyticsJSON,
   formatDuration,
-  calculatePercentageChange,
 } from '@/utils/analytics';
 import { useToast } from '@/hooks/useToast';
-import { cn } from '@/utils';
 import {
-  LineChart,
-  Line,
   BarChart,
   Bar,
   PieChart,
@@ -63,7 +59,11 @@ import {
   Legend,
   AreaChart,
   Area,
+  ScatterChart,
+  Scatter,
+  ZAxis,
 } from 'recharts';
+
 
 const COLORS = ['#FF5733', '#FFC857', '#10b981', '#f59e0b', '#ef4444', '#FF8A5C'];
 
@@ -149,28 +149,47 @@ export function TourAnalyticsPage() {
     enabled: !!id,
   });
 
+  const [heatmapSceneId, setHeatmapSceneId] = useState<string | undefined>();
+
+  const { data: heatmapData } = useQuery({
+    queryKey: [QUERY_KEYS.ANALYTICS, id, 'heatmap', heatmapSceneId, dateRange?.from, dateRange?.to],
+    queryFn: () =>
+      toursApi.getTourHeatmap(id!, {
+        scene_id: heatmapSceneId,
+        start_date: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : undefined,
+        end_date: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : undefined,
+      }),
+    enabled: !!id,
+  });
+
+  const sceneViews = analytics?.scene_views;
+  const hotspotClicks = analytics?.hotspot_clicks;
+  const deviceBreakdown = analytics?.device_breakdown;
+  const dailyViews = analytics?.daily_views;
+  const countryBreakdown = analytics?.country_breakdown;
+
   // Process scene performance data
   const scenePerformanceData = useMemo(() => {
-    if (!analytics?.scene_views || !scenes) return [];
+    if (!sceneViews || !scenes) return [];
 
     return scenes
       .map((scene) => ({
         name: scene.title || `Scene ${scene.order_index + 1}`,
-        views: analytics.scene_views?.[scene.id] || 0,
+        views: sceneViews[scene.id] || 0,
         id: scene.id,
       }))
       .sort((a, b) => b.views - a.views)
       .slice(0, 10); // Top 10 scenes
-  }, [analytics?.scene_views, scenes]);
+  }, [sceneViews, scenes]);
 
   // Process hotspot click data
   const hotspotPerformanceData = useMemo(() => {
-    if (!analytics?.hotspot_clicks || !scenes) return [];
+    if (!hotspotClicks || !scenes) return [];
 
     const hotspotMap = new Map<string, { title: string; clicks: number }>();
     scenes.forEach((scene) => {
       scene.hotspots?.forEach((hotspot) => {
-        const clicks = analytics.hotspot_clicks?.[hotspot.id] || 0;
+        const clicks = hotspotClicks[hotspot.id] || 0;
         if (clicks > 0) {
           hotspotMap.set(hotspot.id, {
             title: hotspot.title || `${hotspot.type} hotspot`,
@@ -184,11 +203,11 @@ export function TourAnalyticsPage() {
       .map(([id, data]) => ({ id, ...data }))
       .sort((a, b) => b.clicks - a.clicks)
       .slice(0, 10);
-  }, [analytics?.hotspot_clicks, scenes]);
+  }, [hotspotClicks, scenes]);
 
   // Process device data for pie chart
   const deviceData = useMemo(() => {
-    if (!analytics?.device_breakdown) {
+    if (!deviceBreakdown) {
       return [
         { name: 'Desktop', value: 0 },
         { name: 'Mobile', value: 0 },
@@ -197,21 +216,21 @@ export function TourAnalyticsPage() {
       ];
     }
 
-    return Object.entries(analytics.device_breakdown)
+    return Object.entries(deviceBreakdown)
       .map(([name, value]) => ({
         name: name.charAt(0).toUpperCase() + name.slice(1),
         value: value as number,
       }))
       .filter((d) => d.value > 0);
-  }, [analytics?.device_breakdown]);
+  }, [deviceBreakdown]);
 
   // Process daily views data
   const dailyViewsData = useMemo(() => {
-    if (!analytics?.daily_views || analytics.daily_views.length === 0) {
+    if (!dailyViews || dailyViews.length === 0) {
       // Generate empty data for the date range
       const data: { date: string; views: number }[] = [];
       if (dateRange?.from && dateRange?.to) {
-        let current = new Date(dateRange.from);
+        const current = new Date(dateRange.from);
         while (current <= dateRange.to) {
           data.push({
             date: format(current, 'yyyy-MM-dd'),
@@ -222,21 +241,21 @@ export function TourAnalyticsPage() {
       }
       return data;
     }
-    return analytics.daily_views;
-  }, [analytics?.daily_views, dateRange]);
+    return dailyViews;
+  }, [dailyViews, dateRange]);
 
   // Country data for geographic distribution
   const countryData = useMemo(() => {
-    if (!analytics?.country_breakdown) return [];
+    if (!countryBreakdown) return [];
 
-    return Object.entries(analytics.country_breakdown)
+    return Object.entries(countryBreakdown)
       .map(([country, views]) => ({
         country,
         views: views as number,
       }))
       .sort((a, b) => b.views - a.views)
       .slice(0, 10);
-  }, [analytics?.country_breakdown]);
+  }, [countryBreakdown]);
 
   const handleExportCSV = () => {
     if (!analytics || !tour) return;
@@ -600,6 +619,85 @@ export function TourAnalyticsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Interaction Heatmap */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Interaction Heatmap</CardTitle>
+          {scenes && scenes.length > 0 && (
+            <select
+              value={heatmapSceneId || ''}
+              onChange={(e) => setHeatmapSceneId(e.target.value || undefined)}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm"
+            >
+              <option value="">All Scenes</option>
+              {scenes.map((scene) => (
+                <option key={scene.id} value={scene.id}>
+                  {scene.title || `Scene ${scene.order_index + 1}`}
+                </option>
+              ))}
+            </select>
+          )}
+        </CardHeader>
+        <CardContent>
+          <div className="h-[350px]">
+            {heatmapData?.heatmap && heatmapData.heatmap.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                  <XAxis
+                    type="number"
+                    dataKey="yaw"
+                    name="Yaw"
+                    domain={[-180, 180]}
+                    stroke="var(--color-text-muted)"
+                    fontSize={12}
+                    label={{ value: 'Yaw (degrees)', position: 'bottom', offset: 0, style: { fill: 'var(--color-text-muted)', fontSize: 12 } }}
+                  />
+                  <YAxis
+                    type="number"
+                    dataKey="pitch"
+                    name="Pitch"
+                    domain={[-90, 90]}
+                    stroke="var(--color-text-muted)"
+                    fontSize={12}
+                    label={{ value: 'Pitch (degrees)', angle: -90, position: 'insideLeft', style: { fill: 'var(--color-text-muted)', fontSize: 12 } }}
+                  />
+                  <ZAxis
+                    type="number"
+                    dataKey="intensity"
+                    range={[20, 400]}
+                    name="Interactions"
+                  />
+                  <RechartsTooltip
+                    cursor={{ strokeDasharray: '3 3' }}
+                    contentStyle={{
+                      backgroundColor: 'var(--color-surface-elevated)',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: '8px',
+                    }}
+                    formatter={(value, name) => {
+                      const numericValue = typeof value === 'number' ? value : 0;
+                      if (name === 'Yaw') return [`${numericValue.toFixed(1)}°`, 'Yaw'];
+                      if (name === 'Pitch') return [`${numericValue.toFixed(1)}°`, 'Pitch'];
+                      return [numericValue, 'Interactions'];
+                    }}
+                  />
+                  <Scatter
+                    data={heatmapData.heatmap}
+                    fill="var(--color-primary-500)"
+                    fillOpacity={0.6}
+                  />
+                </ScatterChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center text-[var(--color-text-muted)]">
+                No heatmap data available yet
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Quick Stats Table */}
       <Card>

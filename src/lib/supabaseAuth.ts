@@ -231,13 +231,19 @@ export const supabaseAuth = {
    * returns to `${origin}/auth/callback?code=...` for exchangeCodeForSession().
    * INTERNAL tool: any Google user can authenticate, but the role guard bounces
    * non-staff after the session is established.
+   *
+   * The redirect URL can be overridden via the VITE_AUTH_REDIRECT_URL env var
+   * (useful for Docker / reverse-proxy setups that need a specific callback origin).
    */
   async signInWithGoogle(redirectTo?: string): Promise<void> {
     const client = requireClient();
     const { error } = await client.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: redirectTo ?? `${window.location.origin}/auth/callback`,
+        redirectTo:
+          redirectTo ??
+          import.meta.env.VITE_AUTH_REDIRECT_URL ??
+          `${window.location.origin}/auth/callback`,
       },
     });
     if (error) {

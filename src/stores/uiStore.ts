@@ -115,6 +115,12 @@ export const useUIStore = create<UIStore>()(
         theme: state.theme,
         sidebarCollapsed: state.sidebarCollapsed,
       }),
+      onRehydrateStorage: () => (state) => {
+        // Apply stored theme after rehydration instead of at module import time
+        if (state?.theme) {
+          applyTheme(state.theme);
+        }
+      },
     }
   )
 );
@@ -128,20 +134,5 @@ function applyTheme(theme: Theme): void {
     root.classList.toggle('dark', prefersDark);
   } else {
     root.classList.toggle('dark', theme === 'dark');
-  }
-}
-
-// Initialize theme on load
-if (typeof window !== 'undefined') {
-  const storedTheme = localStorage.getItem(STORAGE_KEYS.THEME);
-  if (storedTheme) {
-    try {
-      const { state } = JSON.parse(storedTheme);
-      if (state?.theme) {
-        applyTheme(state.theme);
-      }
-    } catch (error) {
-      console.error('Failed to parse stored theme:', error);
-    }
   }
 }

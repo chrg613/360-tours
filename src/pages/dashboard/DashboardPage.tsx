@@ -44,8 +44,8 @@ export function DashboardPage() {
 
   // Fetch recent tours
   const { data: toursData, isLoading: isLoadingTours } = useQuery({
-    queryKey: [QUERY_KEYS.TOURS, { page: 1, page_size: 5 }],
-    queryFn: () => toursApi.getTours({ page: 1, page_size: 5 }),
+    queryKey: [QUERY_KEYS.TOURS, 'recent', { limit: 5 }],
+    queryFn: () => toursApi.getTours({ limit: 5 }),
   });
 
   // Fetch realtime stats (includes recent daily views)
@@ -114,11 +114,16 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent>
             <Progress
-              value={(stats.storage_used / stats.storage_limit) * 100}
+              value={
+                stats.storage_limit > 0
+                  ? Math.min(100, (stats.storage_used / stats.storage_limit) * 100)
+                  : 0
+              }
               className="h-2"
             />
             <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-              {formatBytes(stats.storage_used)} of {formatBytes(stats.storage_limit)} used
+              {formatBytes(stats.storage_used)} of{' '}
+              {stats.storage_limit > 0 ? formatBytes(stats.storage_limit) : 'Unlimited'} used
             </p>
           </CardContent>
         </Card>

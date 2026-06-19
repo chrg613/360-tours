@@ -1,88 +1,148 @@
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Expand, Minimize } from 'lucide-react';
 import { PageLoader, Button } from '@/components/ui';
 import { toursApi } from '@/api';
+import { DEFAULT_TOUR_SETTINGS } from '@/constants';
 import { PanoramaViewer } from '@/components/features/PanoramaViewer';
 import { FloorPlanOverlay } from '@/components/features/FloorPlanOverlay';
 import { HotspotContentModal } from '@/components/features/HotspotContentModal';
-import { useTourEditorStore } from '@/stores';
-import { cn } from '@/utils';
-import type { Hotspot } from '@/types';
+import { useViewerStore } from '@/stores';
+import { usePublicTourTracking } from '@/hooks/usePublicTourTracking';
+import { cn, parseBooleanParam } from '@/utils';
+import type { BrandingSettings, Hotspot } from '@/types';
 
-// Generate a session ID for analytics tracking
-function getSessionId(): string {
-  let sessionId = sessionStorage.getItem('tour_session_id');
-  if (!sessionId) {
-    sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    sessionStorage.setItem('tour_session_id', sessionId);
+function getWatermarkPositionClass(position?: string): string {
+  switch (position) {
+    case 'bottom-left':
+      return 'bottom-2 left-2';
+    case 'top-left':
+      return 'top-3 left-3';
+    case 'top-right':
+      return 'top-3 right-12';
+    case 'bottom-right':
+    default:
+      return 'bottom-2 right-2';
   }
-  return sessionId;
 }
 
 // PostMessage event types for parent communication
 interface EmbedMessage {
   type: 'ready' | 'sceneChange' | 'hotspotClick' | 'fullscreenChange' | 'error';
   tourId: string;
+  tour_id?: string;
   data?: Record<string, unknown>;
 }
 
 export function EmbedTourPage() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
-  const { currentSceneId, setCurrentScene, setCurrentTour } = useTourEditorStore();
+  const { currentSceneId, setCurrentScene } = useViewerStore();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [activeHotspot, setActiveHotspot] = useState<Hotspot | null>(null);
   const [showHotspotModal, setShowHotspotModal] = useState(false);
-  const sessionIdRef = useRef<string>(getSessionId());
 
   // URL parameter configuration
   const startSceneId = searchParams.get('scene');
-  const autoplay = searchParams.get('autoplay') !== '0';
-  const showNavbar = searchParams.get('navbar') !== '0';
-  const showBranding = searchParams.get('branding') !== '0';
-  const minimalChrome = searchParams.get('minimal') === '1';
-  const autoHideControls = searchParams.get('autohide') === '1';
+  const autoplay = parseBooleanParam(searchParams.get('autoplay')) ?? true;
+  const navbarParam = parseBooleanParam(searchParams.get('navbar'));
+  const brandingParam = parseBooleanParam(searchParams.get('branding'));
+  const minimalChrome = parseBooleanParam(searchParams.get('minimal')) ?? false;
+  const autoHideControls = parseBooleanParam(searchParams.get('autohide')) ?? false;
+  const fullscreenParam = parseBooleanParam(searchParams.get('fullscreen'));
+  const vrParam = parseBooleanParam(searchParams.get('vr'));
+  const rotateParam = parseBooleanParam(searchParams.get('rotate'));
 
   // Use public API endpoints (no authentication required for embeds)
   const { data: tour, isLoading: isLoadingTour, error: tourError } = useQuery({
     queryKey: ['public-tour', id],
-    queryFn: () => toursApi.getPublicTour(id!),
+    queryFn: () => toursApi.getPublicTour(id!, { track: false }),
     enabled: !!id,
   });
 
   // Scenes are included in tour response from public API
   const scenes = tour?.scenes;
-  const isLoadingScenes = isLoadingTour;
-  const scenesError = null;
+
+  const viewerSettings = useMemo(() => {
+    if (!tour) return undefined;
+
+    const base = tour.settings ?? DEFAULT_TOUR_SETTINGS;
+    const showNavbar = navbarParam ?? true;
+    const showBranding = brandingParam ?? true;
+    const enableFullscreen = fullscreenParam ?? true;
+    const enableVR = vrParam ?? true;
+    const baseBranding = {
+      ...DEFAULT_TOUR_SETTINGS.branding,
+      ...(base.branding ?? {}),
+    } as BrandingSettings;
+
+    let autoRotate = base.auto_rotate === true;
+    if (rotateParam !== undefined) {
+      autoRotate = rotateParam;
+    }
+    if (!autoplay) {
+      autoRotate = false;
+    }
+
+    return {
+      ...base,
+      auto_rotate: autoRotate,
+      show_navbar: (base.show_navbar ?? true) && showNavbar,
+      enable_fullscreen: (base.enable_fullscreen ?? true) && enableFullscreen,
+      enable_vr: (base.enable_vr ?? true) && enableVR,
+      branding: {
+        ...baseBranding,
+        show_watermark: (baseBranding.show_watermark ?? true) && showBranding,
+      },
+    };
+  }, [
+    autoplay,
+    brandingParam,
+    fullscreenParam,
+    navbarParam,
+    rotateParam,
+    tour,
+    vrParam,
+  ]);
+
+  const showNavbar = viewerSettings?.show_navbar !== false;
+  const showBrandingAssets = brandingParam !== false;
+  const showWatermark = viewerSettings?.branding?.show_watermark !== false;
+  const fullscreenEnabled = viewerSettings?.enable_fullscreen !== false;
+
+  const toggleFullscreen = useCallback(() => {
+    if (!fullscreenEnabled) return;
+
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+      return;
+    }
+
+    document.exitFullscreen();
+  }, [fullscreenEnabled]);
 
   // Send message to parent window
+  // Use window.parent.origin instead of a URL parameter to prevent origin spoofing.
+  // Falls back to '*' only when the parent origin is inaccessible (e.g., cross-origin iframe).
   const postMessage = useCallback((message: EmbedMessage) => {
     if (window.parent !== window) {
-      window.parent.postMessage(message, '*');
+      try {
+        window.parent.postMessage(message, window.parent.origin);
+      } catch {
+        // Cross-origin: fall back to wildcard (parent can still filter by origin)
+        window.parent.postMessage(message, '*');
+      }
     }
   }, []);
 
-  // Track analytics events
-  const trackEvent = useCallback(
-    async (eventType: string, sceneId?: string, hotspotId?: string) => {
-      if (!id) return;
-      try {
-        await toursApi.trackEvent(id, {
-          event_type: eventType,
-          scene_id: sceneId,
-          hotspot_id: hotspotId,
-          session_id: sessionIdRef.current,
-        });
-      } catch (error) {
-        // Silently fail analytics tracking
-        console.debug('Analytics tracking failed:', error);
-      }
-    },
-    [id]
-  );
+  // Analytics tracking (tour_view, session_start/duration, scene_view)
+  const { trackEvent } = usePublicTourTracking({
+    tourId: id,
+    tourLoaded: !!tour,
+    currentSceneId: currentSceneId ?? undefined,
+  });
 
   // Handle hotspot clicks for non-navigation types
   const handleHotspotClick = useCallback((hotspot: Hotspot) => {
@@ -105,9 +165,16 @@ export function EmbedTourPage() {
 
     // For link hotspots, open directly without modal if URL exists
     if (hotspot.type === 'link') {
-      const content = hotspot.content as { url?: string; target?: '_blank' | '_self' } | null;
-      if (content?.url) {
-        window.open(content.url, content.target || '_blank');
+      const content = hotspot.content as {
+        url?: string;
+        target?: '_blank' | '_self';
+        link_url?: string;
+        link_new_tab?: boolean;
+      } | null;
+      const url = content?.url || content?.link_url;
+      const target = content?.target || (content?.link_new_tab === false ? '_self' : '_blank');
+      if (url) {
+        window.open(url, target);
         return;
       }
     }
@@ -117,11 +184,9 @@ export function EmbedTourPage() {
     setShowHotspotModal(true);
   }, [id, postMessage, trackEvent, currentSceneId]);
 
-  // Initialize tour in store and set initial scene
+  // Set initial scene and notify parent
   useEffect(() => {
     if (tour && scenes) {
-      setCurrentTour({ ...tour, scenes });
-
       const sortedScenes = [...scenes].sort((a, b) => a.order_index - b.order_index);
       const initialScene =
         startSceneId ||
@@ -136,40 +201,56 @@ export function EmbedTourPage() {
       postMessage({
         type: 'ready',
         tourId: id!,
+        tour_id: id!,
         data: {
           title: tour.title,
           sceneCount: scenes.length,
+          scene_count: scenes.length,
           currentSceneId: initialScene,
+          current_scene_id: initialScene,
         },
       });
     }
-  }, [tour, scenes, startSceneId, setCurrentTour, setCurrentScene, currentSceneId, id, postMessage]);
+  }, [tour, scenes, startSceneId, setCurrentScene, currentSceneId, id, postMessage]);
 
-  // Notify parent on scene change and track analytics
+  // Notify parent on scene change (scene_view analytics handled by usePublicTourTracking)
   useEffect(() => {
     if (currentSceneId && scenes) {
-      // Track scene view
-      trackEvent('scene_view', currentSceneId);
-
       const scene = scenes.find((s) => s.id === currentSceneId);
       postMessage({
         type: 'sceneChange',
         tourId: id!,
+        tour_id: id!,
         data: {
           sceneId: currentSceneId,
+          scene_id: currentSceneId,
           sceneTitle: scene?.title,
+          scene_title: scene?.title,
           sceneIndex: scenes.findIndex((s) => s.id === currentSceneId),
+          scene_index: scenes.findIndex((s) => s.id === currentSceneId),
         },
       });
     }
-  }, [currentSceneId, scenes, id, postMessage, trackEvent]);
+  }, [currentSceneId, scenes, id, postMessage]);
 
   // Listen for messages from parent
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      // Only accept messages from our parent window. This prevents arbitrary
+      // third-party sites/iframes from driving scene navigation or fullscreen.
+      // event.source is the originating window; for a top-level embed it equals
+      // window.parent, and for same-origin it equals window.
+      if (event.source !== window.parent && event.source !== window) return;
       if (!event.data || typeof event.data !== 'object') return;
 
-      const { type, sceneId } = event.data;
+      const data = event.data as Record<string, unknown>;
+      const type = data.type as string | undefined;
+      const messageData = (data.data && typeof data.data === 'object' ? (data.data as Record<string, unknown>) : undefined);
+      const sceneId =
+        (data.sceneId as string | undefined) ||
+        (data.scene_id as string | undefined) ||
+        (messageData?.sceneId as string | undefined) ||
+        (messageData?.scene_id as string | undefined);
 
       switch (type) {
         case 'goToScene':
@@ -196,30 +277,38 @@ export function EmbedTourPage() {
           }
           break;
         case 'toggleFullscreen':
-          toggleFullscreen();
+          if (fullscreenEnabled) {
+            toggleFullscreen();
+          }
           break;
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [scenes, currentSceneId, setCurrentScene]);
+  }, [fullscreenEnabled, scenes, currentSceneId, setCurrentScene, toggleFullscreen]);
 
   // Listen for fullscreen changes
   useEffect(() => {
     const handleFullscreenChange = () => {
       const fullscreen = !!document.fullscreenElement;
       setIsFullscreen(fullscreen);
+      if (fullscreenEnabled) {
+        trackEvent(fullscreen ? 'fullscreen_enter' : 'fullscreen_exit', undefined, undefined, {
+          is_fullscreen: fullscreen,
+        });
+      }
       postMessage({
         type: 'fullscreenChange',
         tourId: id!,
-        data: { isFullscreen: fullscreen },
+        tour_id: id!,
+        data: { isFullscreen: fullscreen, is_fullscreen: fullscreen },
       });
     };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, [id, postMessage]);
+  }, [fullscreenEnabled, id, postMessage, trackEvent]);
 
   // Auto-hide controls on inactivity
   useEffect(() => {
@@ -234,6 +323,7 @@ export function EmbedTourPage() {
     };
 
     const handleMouseLeave = () => {
+      clearTimeout(timeout);
       timeout = setTimeout(() => setShowControls(false), 1000);
     };
 
@@ -252,28 +342,28 @@ export function EmbedTourPage() {
 
   // Handle errors
   useEffect(() => {
-    const error = tourError || scenesError;
-    if (error) {
+    if (tourError) {
       postMessage({
         type: 'error',
         tourId: id!,
-        data: { message: (error as Error).message || 'Failed to load tour' },
+        data: { message: (tourError as Error).message || 'Failed to load tour' },
       });
     }
-  }, [tourError, scenesError, id, postMessage]);
+  }, [tourError, id, postMessage]);
 
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
-    } else {
-      document.exitFullscreen();
-    }
-  };
-
-  if (isLoadingTour || isLoadingScenes) {
+  if (isLoadingTour) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-black">
         <PageLoader message="Loading tour..." />
+      </div>
+    );
+  }
+
+  if (tourError) {
+    return (
+      <div className="flex h-screen w-screen flex-col items-center justify-center bg-black">
+        <p className="text-white">Failed to load tour</p>
+        <p className="mt-1 text-sm text-white/50">Please check the link or try again later.</p>
       </div>
     );
   }
@@ -293,19 +383,40 @@ export function EmbedTourPage() {
   const hasNext = currentIndex < sortedScenes.length - 1;
 
   // Get branding from tour settings
-  const branding = tour.settings?.branding;
+  const branding = viewerSettings?.branding;
   const primaryColor = branding?.primary_color || '#FF5733';
 
   return (
-    <div className="relative h-screen w-screen bg-black overflow-hidden">
+    <div
+      className="relative h-screen w-screen overflow-hidden bg-black"
+      style={{ fontFamily: viewerSettings?.branding?.font_family }}
+    >
       {/* Viewer */}
       <PanoramaViewer
         scene={currentScene}
         hotspots={currentScene.hotspots || []}
-        tourSettings={tour.settings ?? undefined}
+        tourSettings={viewerSettings}
         onSceneChange={(sceneId) => setCurrentScene(sceneId)}
         onHotspotClick={handleHotspotClick}
+        onVrModeChange={(enabled) =>
+          trackEvent(enabled ? 'vr_enter' : 'vr_exit', undefined, undefined, { mode: 'stereo' })
+        }
+        onGyroscopeChange={(enabled) =>
+          trackEvent(enabled ? 'vr_enter' : 'vr_exit', undefined, undefined, { mode: 'gyroscope' })
+        }
       />
+
+      {/* Tour logo */}
+      {!minimalChrome && showBrandingAssets && branding?.logo_url && (
+        <img
+          src={branding.logo_url}
+          alt={`${tour.title} logo`}
+          className={cn(
+            'absolute left-3 top-3 z-10 h-8 max-w-[120px] object-contain transition-opacity duration-300',
+            showControls ? 'opacity-100' : 'opacity-0'
+          )}
+        />
+      )}
 
       {/* Floor Plan Overlay */}
       {!minimalChrome && tour.settings?.floor_plans && tour.settings.floor_plans.length > 0 && (
@@ -364,6 +475,7 @@ export function EmbedTourPage() {
                     <img
                       src={scene.thumbnail_url || scene.image_url}
                       alt={scene.title || `Scene ${index + 1}`}
+                      loading="lazy"
                       className="h-10 w-16 object-cover"
                     />
                   </button>
@@ -418,8 +530,20 @@ export function EmbedTourPage() {
         </>
       )}
 
+      {/* Compact scene counter for minimal mode */}
+      {minimalChrome && sortedScenes.length > 1 && (
+        <div
+          className={cn(
+            'absolute bottom-2 left-1/2 -translate-x-1/2 z-10 rounded-full bg-black/60 px-3 py-1 text-xs text-white/80 transition-opacity duration-300',
+            showControls ? 'opacity-100' : 'opacity-0'
+          )}
+        >
+          {currentIndex + 1} / {sortedScenes.length}
+        </div>
+      )}
+
       {/* Fullscreen button */}
-      {!minimalChrome && tour.settings?.enable_fullscreen !== false && (
+      {!minimalChrome && fullscreenEnabled && (
         <button
           onClick={toggleFullscreen}
           className={cn(
@@ -433,22 +557,15 @@ export function EmbedTourPage() {
       )}
 
       {/* Branding/Watermark */}
-      {showBranding && branding?.show_watermark !== false && (
+      {showWatermark && (
         <div
           className={cn(
-            'absolute bottom-2 right-2 z-10 transition-opacity duration-300',
+            'absolute z-10 transition-opacity duration-300',
+            getWatermarkPositionClass(branding?.watermark_position),
             showControls ? 'opacity-100' : 'opacity-50'
           )}
         >
-          {branding?.logo_url ? (
-            <img
-              src={branding.logo_url}
-              alt="Logo"
-              className="h-6 max-w-[100px] object-contain"
-            />
-          ) : (
-            <span className="text-xs text-white/50">Powered by 360 Viewer</span>
-          )}
+          <span className="text-xs text-white/50">Powered by 360 Viewer</span>
         </div>
       )}
 

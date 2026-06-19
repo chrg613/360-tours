@@ -43,11 +43,10 @@ const createMockHotspot = (overrides?: Partial<Hotspot>): Hotspot => ({
 
 const createMockTour = (overrides?: Partial<Tour>): Tour => ({
   id: 'tour-1',
-  user_id: 1,
+  user_id: '1',
   title: 'Test Tour',
   description: null,
   status: 'draft',
-  is_public: false,
   visibility: 'private',
   is_featured: false,
   view_count: 0,
@@ -481,6 +480,96 @@ describe('tourEditorStore', () => {
       expect(state.showSettingsPanel).toBe(false);
       expect(state.hasUnsavedChanges).toBe(false);
       expect(state.pendingChanges).toEqual({});
+    });
+  });
+
+  describe('undo/redo', () => {
+    it('canUndo/canRedo are false initially', () => {
+      useTourEditorStore.getState().setCurrentTour(createMockTour());
+      expect(useTourEditorStore.getState().canUndo()).toBe(false);
+      expect(useTourEditorStore.getState().canRedo()).toBe(false);
+    });
+
+    it('undo restores the previous state after updateTourDraft', () => {
+      useTourEditorStore.getState().setCurrentTour(createMockTour());
+      useTourEditorStore.getState().updateTourDraft({ title: 'Changed' });
+      expect(useTourEditorStore.getState().pendingChanges.tour).toEqual({ title: 'Changed' });
+      expect(useTourEditorStore.getState().canUndo()).toBe(true);
+
+      useTourEditorStore.getState().undo();
+
+      const state = useTourEditorStore.getState();
+      expect(state.pendingChanges.tour).toBeUndefined();
+      expect(state.hasUnsavedChanges).toBe(false);
+    });
+
+    it('redo re-applies the state after undo', () => {
+      useTourEditorStore.getState().setCurrentTour(createMockTour());
+      useTourEditorStore.getState().updateTourDraft({ title: 'Changed' });
+      useTourEditorStore.getState().undo();
+      expect(useTourEditorStore.getState().pendingChanges.tour).toBeUndefined();
+      expect(useTourEditorStore.getState().canRedo()).toBe(true);
+
+      useTourEditorStore.getState().redo();
+
+      const state = useTourEditorStore.getState();
+      expect(state.pendingChanges.tour).toEqual({ title: 'Changed' });
+      expect(state.hasUnsavedChanges).toBe(true);
+    });
+
+    it('canUndo/canRedo return correct booleans through a sequence', () => {
+      useTourEditorStore.getState().setCurrentTour(createMockTour());
+      expect(useTourEditorStore.getState().canUndo()).toBe(false);
+
+      useTourEditorStore.getState().updateTourDraft({ title: 'A' });
+      expect(useTourEditorStore.getState().canUndo()).toBe(true);
+      expect(useTourEditorStore.getState().canRedo()).toBe(false);
+
+      useTourEditorStore.getState().undo();
+      expect(useTourEditorStore.getState().canUndo()).toBe(false);
+      expect(useTourEditorStore.getState().canRedo()).toBe(true);
+
+      useTourEditorStore.getState().redo();
+      expect(useTourEditorStore.getState().canUndo()).toBe(true);
+      expect(useTourEditorStore.getState().canRedo()).toBe(false);
+    });
+
+    it('setCurrentTour clears history', () => {
+      useTourEditorStore.getState().setCurrentTour(createMockTour());
+      useTourEditorStore.getState().updateTourDraft({ title: 'Changed' });
+      expect(useTourEditorStore.getState().canUndo()).toBe(true);
+
+      useTourEditorStore.getState().setCurrentTour(createMockTour());
+
+      expect(useTourEditorStore.getState().canUndo()).toBe(false);
+      expect(useTourEditorStore.getState().canRedo()).toBe(false);
+      expect(useTourEditorStore.getState().past).toHaveLength(0);
+      expect(useTourEditorStore.getState().future).toHaveLength(0);
+    });
+
+    it('a new data mutation clears the redo stack after an undo', () => {
+      useTourEditorStore.getState().setCurrentTour(createMockTour());
+      useTourEditorStore.getState().updateTourDraft({ title: 'A' });
+      useTourEditorStore.getState().undo();
+
+      // New mutation should clear future
+      useTourEditorStore.getState().updateTourDraft({ title: 'B' });
+
+      expect(useTourEditorStore.getState().canRedo()).toBe(false);
+      expect(useTourEditorStore.getState().pendingChanges.tour).toEqual({ title: 'B' });
+    });
+
+    it('undo is a no-op when history is empty', () => {
+      useTourEditorStore.getState().setCurrentTour(createMockTour());
+      useTourEditorStore.getState().undo();
+      expect(useTourEditorStore.getState().canUndo()).toBe(false);
+    });
+
+    it('redo is a no-op when future is empty', () => {
+      useTourEditorStore.getState().setCurrentTour(createMockTour());
+      useTourEditorStore.getState().updateTourDraft({ title: 'A' });
+      useTourEditorStore.getState().redo();
+      expect(useTourEditorStore.getState().canRedo()).toBe(false);
     });
   });
 });

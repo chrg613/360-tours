@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
 import { Eye, EyeOff, Bell, Shield, Palette, Trash2 } from 'lucide-react';
@@ -11,16 +11,44 @@ import {
   Button,
   Input,
 } from '@/components/ui';
-import { usersApi } from '@/api';
+import { authApi, usersApi } from '@/api';
 import { useAuthStore, useUIStore } from '@/stores';
+import { useToast } from '@/hooks/useToast';
 import { cn } from '@/utils';
 
 export function SettingsPage() {
-  const { user, logout } = useAuthStore();
+  const { user } = useAuthStore();
   const { theme, setTheme } = useUIStore();
+  const { toast } = useToast();
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState('');
+
+  // Notification settings state
+  const [notifications, setNotifications] = useState({
+    email_notifications: (user?.notification_settings?.email_notifications as boolean) ?? true,
+    marketing_emails: (user?.notification_settings?.marketing_emails as boolean) ?? false,
+  });
+
+  // Notification settings mutation
+  const notificationMutation = useMutation({
+    mutationFn: (settings: Record<string, boolean>) =>
+      usersApi.updateProfile({ notification_settings: settings }),
+    onSuccess: () => {
+      toast('success', 'Notification preferences saved.', { title: 'Settings updated' });
+    },
+    onError: (error: Error) => {
+      toast('error', error.message || 'Failed to update notifications.', { title: 'Error' });
+    },
+  });
+
+  const handleNotificationChange = useCallback(
+    (key: keyof typeof notifications, value: boolean) => {
+      const updated = { ...notifications, [key]: value };
+      setNotifications(updated);
+      notificationMutation.mutate(updated);
+    },
+    [notifications, notificationMutation]
+  );
 
   const {
     register,
@@ -37,19 +65,23 @@ export function SettingsPage() {
 
   // Change password mutation
   const changePasswordMutation = useMutation({
-    mutationFn: (data: { current_password: string; new_password: string }) =>
-      usersApi.changePassword(data),
+    mutationFn: async (data: { current_password: string; new_password: string }) => {
+      if (!user?.phone && !user?.email) {
+        throw new Error('Missing phone or email on your profile');
+      }
+      await authApi.changePassword({
+        phone: user.phone ?? undefined,
+        email: user.email ?? undefined,
+        current_password: data.current_password,
+        new_password: data.new_password,
+      });
+    },
     onSuccess: () => {
       reset();
-      alert('Password changed successfully!');
+      toast('success', 'Your password has been updated.', { title: 'Password changed' });
     },
-  });
-
-  // Delete account mutation
-  const deleteAccountMutation = useMutation({
-    mutationFn: (password: string) => usersApi.deleteAccount(password),
-    onSuccess: () => {
-      logout();
+    onError: (error: Error) => {
+      toast('error', error.message || 'Failed to change password. Please try again.', { title: 'Error' });
     },
   });
 
@@ -59,7 +91,7 @@ export function SettingsPage() {
     confirm_password: string;
   }) => {
     if (data.new_password !== data.confirm_password) {
-      alert('Passwords do not match');
+      toast('error', 'New password and confirmation do not match.', { title: 'Passwords do not match' });
       return;
     }
     await changePasswordMutation.mutateAsync({
@@ -131,7 +163,8 @@ export function SettingsPage() {
               </div>
               <input
                 type="checkbox"
-                defaultChecked
+                checked={notifications.email_notifications}
+                onChange={(e) => handleNotificationChange('email_notifications', e.target.checked)}
                 className="h-5 w-5 rounded border-[var(--color-border)] text-[var(--color-primary-600)]"
               />
             </label>
@@ -144,6 +177,8 @@ export function SettingsPage() {
               </div>
               <input
                 type="checkbox"
+                checked={notifications.marketing_emails}
+                onChange={(e) => handleNotificationChange('marketing_emails', e.target.checked)}
                 className="h-5 w-5 rounded border-[var(--color-border)] text-[var(--color-primary-600)]"
               />
             </label>
@@ -207,45 +242,18 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Danger Zone */}
-      <Card className="border-[var(--color-error-500)]">
+      {/* Account Deletion */}
+      <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <Trash2 className="h-5 w-5 text-[var(--color-error-600)]" />
-            <CardTitle className="text-[var(--color-error-600)]">Danger Zone</CardTitle>
+            <Trash2 className="h-5 w-5 text-[var(--color-text-muted)]" />
+            <CardTitle>Delete Account</CardTitle>
           </div>
-          <CardDescription>
-            Irreversible actions that affect your account
-          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-lg border border-[var(--color-error-200)] bg-[var(--color-error-50)] p-4">
-            <h4 className="font-medium text-[var(--color-error-700)]">Delete Account</h4>
-            <p className="mt-1 text-sm text-[var(--color-error-600)]">
-              Once you delete your account, there is no going back. All your tours and data will be
-              permanently deleted.
-            </p>
-            <div className="mt-4 space-y-3">
-              <Input
-                placeholder='Type "DELETE" to confirm'
-                value={deleteConfirm}
-                onChange={(e) => setDeleteConfirm(e.target.value)}
-              />
-              <Button
-                variant="destructive"
-                disabled={deleteConfirm !== 'DELETE'}
-                isLoading={deleteAccountMutation.isPending}
-                onClick={() => {
-                  const password = prompt('Enter your password to confirm:');
-                  if (password) {
-                    deleteAccountMutation.mutate(password);
-                  }
-                }}
-              >
-                Delete My Account
-              </Button>
-            </div>
-          </div>
+          <p className="text-sm text-[var(--color-text-muted)]">
+            To delete your account, contact support.
+          </p>
         </CardContent>
       </Card>
     </div>

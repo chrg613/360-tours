@@ -1,32 +1,10 @@
-import axios from 'axios';
-
 import { apiClient, extractData } from './client';
-import { SUPABASE_PUBLISHABLE_KEY, API_TIMEOUT } from '@/constants';
-import type { FileUploadResponse, MediaFile, PaginatedResponse } from '@/types';
-import { supabaseAuth } from '@/lib/supabaseAuth';
+import type { FileUploadResponse, MediaFile, CursorPaginatedResponse } from '@/types';
 
 export interface UploadOptions {
   folder?: string;
   visibility?: 'public' | 'private' | 'unlisted';
   onProgress?: (progress: number) => void;
-}
-
-export interface PresignedUploadRequestItem {
-  filename: string;
-  content_type?: string;
-  file_size?: number;
-  folder_type?: string;
-  tour_id?: string;
-  visibility?: 'public' | 'private' | 'unlisted';
-}
-
-export interface PresignedUploadResponseItem {
-  upload_id: string;
-  signed_url: string;
-  token: string;
-  path: string;
-  public_url: string;
-  media?: MediaFile | null;
 }
 
 export const uploadApi = {
@@ -88,12 +66,12 @@ export const uploadApi = {
   },
 
   async getMediaFiles(params?: {
-    page?: number;
-    page_size?: number;
+    cursor?: string | null;
+    limit?: number;
     folder?: string;
     mime_type?: string;
-  }): Promise<PaginatedResponse<MediaFile>> {
-    const response = await apiClient.get<PaginatedResponse<MediaFile>>('/upload/media', {
+  }): Promise<CursorPaginatedResponse<MediaFile>> {
+    const response = await apiClient.get<CursorPaginatedResponse<MediaFile>>('/upload/media', {
       params,
     });
     return extractData(response);
@@ -108,59 +86,19 @@ export const uploadApi = {
     await apiClient.delete(`/upload/media/${id}`);
   },
 
-  async createPresignedUploads(
-    files: PresignedUploadRequestItem[]
-  ): Promise<PresignedUploadResponseItem[]> {
-    const response = await apiClient.post<{ items: PresignedUploadResponseItem[] }>(
-      '/upload/presigned',
-      { files }
+  async deleteMediaFiles(ids: string[]): Promise<{ deleted: string[]; failed: { id: string; error: string }[] }> {
+    const deleted: string[] = [];
+    const failed: { id: string; error: string }[] = [];
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          await apiClient.delete(`/upload/media/${id}`);
+          deleted.push(id);
+        } catch (err) {
+          failed.push({ id, error: (err as Error).message });
+        }
+      })
     );
-    return extractData(response).items;
-  },
-
-  async uploadToSignedUrl(
-    signedUrl: string,
-    file: File,
-    options: { onProgress?: (progress: number) => void } = {}
-  ): Promise<void> {
-    if (!SUPABASE_PUBLISHABLE_KEY) {
-      throw new Error(
-        'Missing Supabase publishable key (VITE_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_ANON_KEY)'
-      );
-    }
-
-    const accessToken = await supabaseAuth.getAccessToken();
-    const authToken = accessToken || SUPABASE_PUBLISHABLE_KEY;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
-
-    try {
-      await axios.put(signedUrl, file, {
-        headers: {
-          apikey: SUPABASE_PUBLISHABLE_KEY,
-          Authorization: `Bearer ${authToken}`,
-          'x-upsert': 'false',
-          'Content-Type': file.type || 'application/octet-stream',
-        },
-        signal: controller.signal,
-        onUploadProgress: (progressEvent) => {
-          if (!options.onProgress) return;
-          const total = progressEvent.total ?? file.size;
-          if (!total) return;
-          const progress = Math.round((progressEvent.loaded * 100) / total);
-          options.onProgress(progress);
-        },
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  },
-
-  async confirmUpload(uploadId: string): Promise<MediaFile> {
-    const response = await apiClient.post<{ media: MediaFile; message: string }>(
-      `/upload/confirm/${uploadId}`
-    );
-    return extractData(response).media;
+    return { deleted, failed };
   },
 };

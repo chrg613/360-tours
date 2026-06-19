@@ -41,10 +41,10 @@ Notes:
 
 ## Upload flow (MVP)
 
-The backend supports a presigned upload flow:
+The backend supports a direct upload flow via Cloudinary:
 
-1. Client calls `POST /api/v1/upload/presigned` with a list of files to upload.
-2. Client uploads bytes to `signed_url` using `PUT` and the required Supabase headers.
+1. Client calls `POST /api/v1/upload` with multipart form data (`file`, `folder`, `visibility`).
+2. Backend uploads to Cloudinary and returns `{ public_url, file_path }`.
 3. Client updates the relevant resource to reference `public_url` (e.g., `Scene.image_url`, `FloorPlan.image_url`).
 
 Uploads MUST validate:
@@ -62,6 +62,16 @@ Typical stages:
 - Generate thumbnails
 - Generate web-optimized derivatives (e.g., WebP)
 - (Optional) generate higher quality/VR derivatives
+
+### Reel videos
+
+AI-generated 360 reels (see `../features/reel-generation.md`) are stored in Cloudinary with `resource_type=video`:
+
+- Folder pattern: `tours/{tour_id}/reels/{job_id}.mp4`
+- Thumbnail: a derived `.jpg` at the same path (Cloudinary video-to-image derivative).
+- Format: H.264 MP4, 1080×1920 @ 30fps (vertical 9:16).
+- Typical size: ~10–30 MB per reel.
+- Reels are generated server-side via `ffmpeg`; clients never upload reel video bytes.
 
 ## Access control and URLs
 

@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, extractData } from './client';
 import type {
   Tour,
   TourCreateInput,
@@ -11,32 +11,26 @@ import type {
   HotspotUpdateInput,
   TourAnalytics,
   DashboardStats,
-  PaginatedResponse,
+  DashboardRealtimeStats,
+  TourHeatmapData,
+  CursorPaginatedResponse,
   FloorPlanResponse,
   FloorPlanCreateInput,
   FloorPlanUpdateInput,
   FloorPlanMarker,
 } from '@/types';
 
-/**
- * Helper to extract data from API response.
- * Backend returns data directly (no wrapper), so we just return response.data.
- */
-function extractData<T>(response: { data: T }): T {
-  return response.data;
-}
-
 export const toursApi = {
   /**
-   * Get all tours for the current user
+   * Get all tours for the current user (cursor pagination)
    */
   async getTours(params?: {
-    page?: number;
-    page_size?: number;
+    cursor?: string | null;
+    limit?: number;
     status?: string;
     search?: string;
-  }): Promise<PaginatedResponse<Tour>> {
-    const response = await apiClient.get<PaginatedResponse<Tour>>('/tours', {
+  }): Promise<CursorPaginatedResponse<Tour>> {
+    const response = await apiClient.get<CursorPaginatedResponse<Tour>>('/tours', {
       params,
     });
     return extractData(response);
@@ -62,7 +56,7 @@ export const toursApi = {
    * Update a tour
    */
   async updateTour(id: string, data: TourUpdateInput): Promise<Tour> {
-    const response = await apiClient.put<Tour>(`/tours/${id}`, data);
+    const response = await apiClient.patch<Tour>(`/tours/${id}`, data);
     return extractData(response);
   },
 
@@ -118,6 +112,26 @@ export const toursApi = {
     return extractData(response);
   },
 
+  /**
+   * Get realtime dashboard stats including recent daily views
+   */
+  async getDashboardRealtime(): Promise<DashboardRealtimeStats> {
+    const response = await apiClient.get<DashboardRealtimeStats>('/dashboard/realtime');
+    return extractData(response);
+  },
+
+  /**
+   * Get heatmap data for a tour
+   */
+  async getTourHeatmap(id: string, params?: {
+    scene_id?: string;
+    start_date?: string;
+    end_date?: string;
+  }): Promise<TourHeatmapData> {
+    const response = await apiClient.get<TourHeatmapData>(`/tours/${id}/heatmap`, { params });
+    return extractData(response);
+  },
+
   // Scene Management
   /**
    * Get all scenes for a tour
@@ -147,7 +161,7 @@ export const toursApi = {
    * Update a scene
    */
   async updateScene(id: string, data: SceneUpdateInput): Promise<Scene> {
-    const response = await apiClient.put<Scene>(`/scenes/${id}`, data);
+    const response = await apiClient.patch<Scene>(`/scenes/${id}`, data);
     return extractData(response);
   },
 
@@ -162,7 +176,7 @@ export const toursApi = {
    * Reorder scenes in a tour
    */
   async reorderScenes(tourId: string, sceneIds: string[]): Promise<Scene[]> {
-    const response = await apiClient.put<Scene[]>(`/tours/${tourId}/scenes/reorder`, {
+    const response = await apiClient.post<Scene[]>(`/tours/${tourId}/scenes/reorder`, {
       scene_ids: sceneIds,
     });
     return extractData(response);
@@ -197,7 +211,7 @@ export const toursApi = {
    * Update a hotspot
    */
   async updateHotspot(id: string, data: HotspotUpdateInput): Promise<Hotspot> {
-    const response = await apiClient.put<Hotspot>(`/hotspots/${id}`, data);
+    const response = await apiClient.patch<Hotspot>(`/hotspots/${id}`, data);
     return extractData(response);
   },
 
@@ -220,8 +234,10 @@ export const toursApi = {
   /**
    * Get a public tour by ID
    */
-  async getPublicTour(id: string): Promise<Tour> {
-    const response = await apiClient.get<Tour>(`/public/tours/${id}`);
+  async getPublicTour(id: string, params?: { track?: boolean }): Promise<Tour> {
+    const response = await apiClient.get<Tour>(`/public/tours/${id}`, {
+      params: params?.track === undefined ? undefined : { track: params.track },
+    });
     return extractData(response);
   },
 
@@ -234,6 +250,14 @@ export const toursApi = {
   },
 
   /**
+   * Get floor plans for a public tour (fallback when not embedded in tour settings)
+   */
+  async getPublicFloorPlans(tourId: string): Promise<FloorPlanResponse[]> {
+    const response = await apiClient.get<FloorPlanResponse[]>(`/public/tours/${tourId}/floor-plans`);
+    return extractData(response);
+  },
+
+  /**
    * Track analytics event for a public tour
    */
   async trackEvent(tourId: string, eventData: {
@@ -241,8 +265,27 @@ export const toursApi = {
     scene_id?: string;
     hotspot_id?: string;
     session_id?: string;
+    event_data?: Record<string, unknown>;
   }): Promise<void> {
     await apiClient.post(`/public/tours/${tourId}/events`, eventData);
+  },
+
+  async likePublicTour(tourId: string, sessionId?: string): Promise<{ like_count: number }> {
+    const response = await apiClient.post<{ like_count: number }>(
+      `/public/tours/${tourId}/like`,
+      undefined,
+      {
+        headers: sessionId ? { 'x-session-id': sessionId } : undefined,
+      }
+    );
+    return extractData(response);
+  },
+
+  async unlikePublicTour(tourId: string, sessionId?: string): Promise<{ like_count: number }> {
+    const response = await apiClient.delete<{ like_count: number }>(`/public/tours/${tourId}/like`, {
+      headers: sessionId ? { 'x-session-id': sessionId } : undefined,
+    });
+    return extractData(response);
   },
 
   // Floor Plan Management

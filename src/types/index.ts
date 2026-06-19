@@ -300,12 +300,11 @@ export interface ApiError {
   detail?: string | { code?: string; message?: string };
 }
 
-export interface PaginatedResponse<T> {
+export interface CursorPaginatedResponse<T> {
   items: T[];
-  total: number;
-  page: number;
-  page_size: number;
-  total_pages: number;
+  next_cursor: string | null;
+  has_more: boolean;
+  limit: number;
 }
 
 // Auth Types
@@ -385,6 +384,7 @@ export type AIJobType =
   | 'hotspot_suggestions'
   | 'description_generation'
   | 'quality_checks'
+  | 'generate_reel'
   // Accepted for older backend responses while the API is converging on the PRD names.
   | 'hotspot_placement'
   | 'optimization';

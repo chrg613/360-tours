@@ -1,6 +1,6 @@
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { MetaTags, VirtualTourStructuredData } from '@/components/common/MetaTags';
 import {
   Share2,
@@ -22,6 +22,7 @@ import { FloorPlanOverlay } from '@/components/features/FloorPlanOverlay';
 import { HotspotContentModal } from '@/components/features/HotspotContentModal';
 import { useViewerStore } from '@/stores';
 import { usePublicTourTracking } from '@/hooks/usePublicTourTracking';
+import { useTwoFingerSwipe } from '@/hooks';
 import { cn, parseBooleanParam } from '@/utils';
 import type { Hotspot } from '@/types';
 
@@ -51,6 +52,8 @@ export function PublicTourPage() {
   const [activeHotspot, setActiveHotspot] = useState<Hotspot | null>(null);
   const [showHotspotModal, setShowHotspotModal] = useState(false);
   const { currentSceneId, setCurrentScene } = useViewerStore();
+  const thumbnailScrollRef = useRef<HTMLDivElement>(null);
+  const viewerWrapRef = useRef<HTMLDivElement>(null);
 
   // Get URL parameters for customization
   const startSceneId = searchParams.get('scene');
@@ -70,6 +73,17 @@ export function PublicTourPage() {
   // Scenes are included in tour response from public API
   const scenes = tour?.scenes;
   const isLoadingScenes = isLoadingTour;
+
+  // Floor plans: prefer those embedded in tour settings; otherwise fetch
+  // from the dedicated public endpoint as a graceful fallback.
+  const embeddedFloorPlans = tour?.settings?.floor_plans;
+  const { data: fetchedFloorPlans } = useQuery({
+    queryKey: ['public-tour-floor-plans', id],
+    queryFn: () => toursApi.getPublicFloorPlans(id!),
+    enabled: !!id && (!embeddedFloorPlans || embeddedFloorPlans.length === 0),
+    retry: false,
+  });
+  const floorPlans = embeddedFloorPlans?.length ? embeddedFloorPlans : fetchedFloorPlans ?? [];
 
   const sortedScenes = useMemo(() => {
     if (!scenes) return [];
@@ -133,12 +147,29 @@ export function PublicTourPage() {
   }, [sortedScenes, startSceneId, tour?.settings?.initial_scene_id, setCurrentScene]);
 
   // Keyboard shortcuts
+  // Keep the latest currentSceneId in a ref so the keyboard listener can be
+  // registered once per sortedScenes change instead of per scene navigation.
+  const currentSceneIdRef = useRef(currentSceneId);
+  useEffect(() => {
+    currentSceneIdRef.current = currentSceneId;
+  }, [currentSceneId]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!scenes) return;
+      // Ignore shortcuts while typing in form fields / contenteditable elements.
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
 
-      const sortedScenes = [...scenes].sort((a, b) => a.order_index - b.order_index);
-      const currentIndex = sortedScenes.findIndex((s) => s.id === currentSceneId);
+      if (!sortedScenes.length) return;
+
+      const currentIndex = sortedScenes.findIndex((s) => s.id === currentSceneIdRef.current);
 
       switch (e.key) {
         case 'ArrowRight':
@@ -188,7 +219,7 @@ export function PublicTourPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [fullscreenEnabled, scenes, currentSceneId, setCurrentScene, toggleFullscreen]);
+  }, [fullscreenEnabled, sortedScenes, setCurrentScene, toggleFullscreen]);
 
   // Listen for fullscreen changes
   useEffect(() => {
@@ -216,6 +247,19 @@ export function PublicTourPage() {
     if (!currentScene) return -1;
     return sortedScenes.findIndex((s) => s.id === currentScene.id);
   }, [currentScene, sortedScenes]);
+
+  // Two-finger horizontal swipe to navigate between scenes on touch devices.
+  useTwoFingerSwipe(viewerWrapRef, {
+    enabled: sortedScenes.length > 1,
+    onSwipeLeft: () => {
+      const i = sortedScenes.findIndex((s) => s.id === currentSceneId);
+      if (i >= 0 && i < sortedScenes.length - 1) setCurrentScene(sortedScenes[i + 1].id);
+    },
+    onSwipeRight: () => {
+      const i = sortedScenes.findIndex((s) => s.id === currentSceneId);
+      if (i > 0) setCurrentScene(sortedScenes[i - 1].id);
+    },
+  });
 
   // Handle hotspot clicks for non-navigation types
   const handleHotspotClick = useCallback(
@@ -316,25 +360,27 @@ export function PublicTourPage() {
 
       {/* Viewer */}
       {currentScene && (
-        <PanoramaViewer
-          scene={currentScene}
-          hotspots={currentScene.hotspots || []}
-          tourSettings={viewerSettings}
-          onSceneChange={(sceneId) => setCurrentScene(sceneId)}
-          onHotspotClick={handleHotspotClick}
-          onVrModeChange={(enabled) =>
-            trackEvent(enabled ? 'vr_enter' : 'vr_exit', undefined, undefined, { mode: 'stereo' })
-          }
-          onGyroscopeChange={(enabled) =>
-            trackEvent(enabled ? 'vr_enter' : 'vr_exit', undefined, undefined, { mode: 'gyroscope' })
-          }
-        />
+        <div ref={viewerWrapRef} className="h-full w-full">
+          <PanoramaViewer
+            scene={currentScene}
+            hotspots={currentScene.hotspots || []}
+            tourSettings={viewerSettings}
+            onSceneChange={(sceneId) => setCurrentScene(sceneId)}
+            onHotspotClick={handleHotspotClick}
+            onVrModeChange={(enabled) =>
+              trackEvent(enabled ? 'vr_enter' : 'vr_exit', undefined, undefined, { mode: 'stereo' })
+            }
+            onGyroscopeChange={(enabled) =>
+              trackEvent(enabled ? 'vr_enter' : 'vr_exit', undefined, undefined, { mode: 'gyroscope' })
+            }
+          />
+        </div>
       )}
 
       {/* Floor Plan Overlay */}
-      {tour.settings?.floor_plans && tour.settings.floor_plans.length > 0 && (
+      {floorPlans.length > 0 && (
         <FloorPlanOverlay
-          floorPlans={tour.settings.floor_plans}
+          floorPlans={floorPlans}
           currentSceneId={currentScene?.id || ''}
           scenes={sortedScenes}
           onSceneChange={(sceneId) => setCurrentScene(sceneId)}
@@ -418,26 +464,33 @@ export function PublicTourPage() {
       {/* Scene Thumbnails (if navbar enabled) */}
       {showNavbar && sortedScenes.length > 1 && (
         <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black/70 to-transparent p-4">
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {sortedScenes.map((scene) => (
-              <button
-                key={scene.id}
-                onClick={() => setCurrentScene(scene.id)}
-                className={cn(
-                  'shrink-0 overflow-hidden rounded-lg border-2 transition-all',
-                  currentScene?.id === scene.id
-                    ? 'border-white'
-                    : 'border-transparent opacity-70 hover:opacity-100'
-                )}
-              >
-                <img
-                  src={scene.thumbnail_url || scene.image_url}
-                  alt={scene.title || 'Scene'}
-                  loading="lazy"
-                  className="h-16 w-24 object-cover"
-                />
-              </button>
-            ))}
+          <div className="relative">
+            <div className="pointer-events-none absolute left-0 top-0 bottom-2 z-10 w-8 bg-gradient-to-r from-black/70 to-transparent" />
+            <div className="pointer-events-none absolute right-0 top-0 bottom-2 z-10 w-8 bg-gradient-to-l from-black/70 to-transparent" />
+            <div
+              ref={thumbnailScrollRef}
+              className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {sortedScenes.map((scene) => (
+                <button
+                  key={scene.id}
+                  onClick={() => setCurrentScene(scene.id)}
+                  className={cn(
+                    'shrink-0 overflow-hidden rounded-lg border-2 transition-all',
+                    currentScene?.id === scene.id
+                      ? 'border-white'
+                      : 'border-transparent opacity-70 hover:opacity-100'
+                  )}
+                >
+                  <img
+                    src={scene.thumbnail_url || scene.image_url}
+                    alt={scene.title || 'Scene'}
+                    loading="lazy"
+                    className="h-16 w-24 object-cover"
+                  />
+                </button>
+              ))}
+            </div>
           </div>
           {/* Scene counter */}
           <div className="mt-2 text-center text-xs text-white/70">
@@ -529,6 +582,8 @@ export function PublicTourPage() {
         hotspot={activeHotspot}
         open={showHotspotModal}
         onOpenChange={setShowHotspotModal}
+        muted={isMuted}
+        onMutedChange={setIsMuted}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -29,6 +29,7 @@ import {
 import { toursApi } from '@/api';
 import { ROUTES, QUERY_KEYS, TOUR_STATUS_OPTIONS } from '@/constants';
 import { formatCompactNumber, formatRelativeTime } from '@/utils/format';
+import { useDebounce } from '@/hooks';
 import type { Tour } from '@/types';
 import { cn } from '@/utils';
 
@@ -40,19 +41,30 @@ export function ToursPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [page, setPage] = useState(1);
+  const [cursor, setCursor] = useState<string | null>(null);
+  // Stack of cursors used for previous pages, enabling a "Prev" navigation.
+  const [cursorHistory, setCursorHistory] = useState<string[]>([]);
+  const debouncedSearch = useDebounce(searchQuery, 300);
 
-  // Fetch tours
+  // Fetch tours (cursor pagination)
   const { data, isLoading } = useQuery({
-    queryKey: [QUERY_KEYS.TOURS, { page, search: searchQuery, status: statusFilter }],
+    queryKey: [QUERY_KEYS.TOURS, { cursor, search: debouncedSearch, status: statusFilter }],
     queryFn: () =>
       toursApi.getTours({
-        page,
-        page_size: 12,
-        search: searchQuery || undefined,
+        cursor,
+        limit: 12,
+        search: debouncedSearch || undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
       }),
   });
+
+  // Reset to first page whenever the debounced search or status filter changes
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCursor(null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCursorHistory([]);
+  }, [debouncedSearch, statusFilter]);
 
   // Delete tour mutation
   const deleteMutation = useMutation({
@@ -80,7 +92,21 @@ export function ToursPage() {
   });
 
   const tours = data?.items || [];
-  const totalPages = data?.total_pages || 1;
+  const hasMore = data?.has_more ?? false;
+  const canGoBack = cursorHistory.length > 0;
+
+  const handleNext = () => {
+    if (!data?.next_cursor) return;
+    setCursorHistory((h) => [...h, cursor ?? '']);
+    setCursor(data.next_cursor);
+  };
+
+  const handlePrev = () => {
+    if (cursorHistory.length === 0) return;
+    const prev = cursorHistory[cursorHistory.length - 1];
+    setCursorHistory((h) => h.slice(0, -1));
+    setCursor(prev || null);
+  };
 
   const handleDelete = async (tour: Tour) => {
     if (confirm(`Are you sure you want to delete "${tour.title}"?`)) {
@@ -236,25 +262,22 @@ export function ToursPage() {
         </div>
       )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
+      {/* Pagination (cursor-based Prev / Next) */}
+      {(canGoBack || hasMore) && (
         <div className="flex items-center justify-center gap-2">
           <Button
             variant="outline"
             size="sm"
-            disabled={page === 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={!canGoBack}
+            onClick={handlePrev}
           >
             Previous
           </Button>
-          <span className="text-sm text-[var(--color-text-muted)]">
-            Page {page} of {totalPages}
-          </span>
           <Button
             variant="outline"
             size="sm"
-            disabled={page === totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={!hasMore}
+            onClick={handleNext}
           >
             Next
           </Button>

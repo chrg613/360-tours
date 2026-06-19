@@ -49,8 +49,7 @@ Related docs:
 
 Upload uses a **2-step presigned flow**:
 
-1. **Presign**: `POST /api/v1/upload/presigned` with file metadata → returns `signed_url` and `public_url`.
-2. **Upload**: `PUT signed_url` with file bytes and Supabase headers (`apikey`, `Authorization`, `Content-Type`).
+1. **Upload**: `POST /api/v1/upload` with multipart form data (`file`, `folder: scenes`, `visibility: public`) → returns `public_url`.
 
 After upload, create the scene:
 

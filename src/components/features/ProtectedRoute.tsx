@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from 'react';
+import { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores';
 import { ROUTES } from '@/constants';
@@ -11,14 +11,7 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
   const location = useLocation();
-  const { isAuthenticated, isLoading, user, fetchCurrentUser, tokens } = useAuthStore();
-
-  useEffect(() => {
-    // If we have tokens but no user, fetch the user
-    if (tokens && !user && !isLoading) {
-      fetchCurrentUser();
-    }
-  }, [tokens, user, isLoading, fetchCurrentUser]);
+  const { isAuthenticated, isLoading, user, tokens } = useAuthStore();
 
   // Show loading while checking auth
   if (isLoading) {

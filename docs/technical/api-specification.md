@@ -92,43 +92,17 @@ Response (200): `User`
 
 ### Upload profile image
 
-`POST /api/v1/users/me/avatar`
+`POST /api/v1/users/me/profile-image`
 
 Request: `multipart/form-data` with `file` field.
 
-Response (200): `User` (with updated `profile_image_url`)
+Response (200): the full updated `User` object (with the new `profile_image_url`), not `{url}`.
 
-### Delete profile image
+> `POST /api/v1/users/me/avatar` is accepted as an alias for the same operation.
 
-`DELETE /api/v1/users/me/avatar`
+### Account deletion
 
-Response (200): `User` (with `profile_image_url: null`)
-
-### Get usage stats
-
-`GET /api/v1/users/me/usage`
-
-Response (200):
-```json
-{
-  "total_tours": 12,
-  "published_tours": 5,
-  "total_scenes": 48,
-  "storage_used": 536870912,
-  "storage_limit": 5368709120
-}
-```
-
-### Delete account
-
-`DELETE /api/v1/users/me`
-
-Request:
-```json
-{ "password": "string" }
-```
-
-Response (204): no body
+There is no self-service account deletion endpoint. Account deletion is handled via support for now.
 
 ## Dashboard (MVP)
 
@@ -150,14 +124,13 @@ Response (200):
 
 ## Uploads (MVP)
 
-Uploads support two flows:
+Uploads support a direct upload flow:
 
-1. **Presigned flow** (recommended): Client gets a signed URL, then uploads directly to Supabase Storage.
-2. **Server-proxy flow**: Client uploads via multipart form to the backend.
+1. **Direct upload** (recommended): Client uploads via multipart form to the backend, which stores to Cloudinary.
 
-### Presign an upload
+### Upload a file
 
-`POST /api/v1/upload/presigned`
+`POST /api/v1/upload`
 
 Request:
 ```json
@@ -282,6 +255,8 @@ Request (example):
 
 Response (200): `Tour`
 
+> `PUT /api/v1/tours/{tour_id}` is also accepted as a legacy alias.
+
 ### Delete tour
 
 `DELETE /api/v1/tours/{tour_id}`
@@ -342,6 +317,8 @@ Request (example):
 
 Response (200): `Scene`
 
+> `PUT /api/v1/scenes/{scene_id}` is also accepted as a legacy alias.
+
 ### Delete scene
 
 `DELETE /api/v1/scenes/{scene_id}` → Response (204)
@@ -356,6 +333,8 @@ Request:
 ```
 
 Response (200): array of `Scene` (updated order)
+
+> `PUT /api/v1/tours/{tour_id}/scenes/reorder` is also accepted as a legacy alias.
 
 ## Hotspots (MVP)
 
@@ -591,6 +570,53 @@ Response (200): updated `Scene[]`
 `POST /api/v1/ai/jobs/{job_id}/apply-hotspots`
 
 Response (200): updated `Hotspot[]`
+
+### Generate 360 reel
+
+`POST /api/v1/ai/tours/{tour_id}/reel`
+
+Renders the tour's panoramas into a vertical 9:16 "tiny planet" reel video (see `../features/reel-generation.md`).
+
+Request (all fields optional):
+```json
+{
+  "scene_ids": ["scene1", "scene2"],
+  "scene_duration": 3,
+  "transition_duration": 0.5,
+  "rotation_degrees": 120
+}
+```
+
+- `scene_ids`: ordered list of the tour's scene ids to include; defaults to all scenes in `order_index` order.
+- `scene_duration`: seconds per scene, `2`–`6` (default `3`).
+- `transition_duration`: crossfade seconds between scenes, `0`–`1` (default `0.5`).
+- `rotation_degrees`: yaw rotation per scene, `0`–`360` (default `120`).
+
+Response (200): standard `AIJobResponse` (`{ "job": AIJob }`) with `job_type: "generate_reel"`.
+
+Track progress via the existing `GET /api/v1/ai/jobs/{job_id}` and the WebSocket `/ws/jobs/{job_id}?token=...`.
+
+Completed job `result`:
+```json
+{
+  "tour_id": "string",
+  "video_url": "https://.../tours/{tour_id}/reels/{job_id}.mp4",
+  "thumbnail_url": "https://.../tours/{tour_id}/reels/{job_id}.jpg",
+  "duration_seconds": 24.5,
+  "scene_count": 8,
+  "width": 1080,
+  "height": 1920
+}
+```
+
+Limits: at most 10 scenes per reel and ~60 seconds total (`scene_duration * scene_count`); scenes beyond either cap are silently dropped rather than rejected.
+
+Errors:
+- `400` — the tour has no scenes, or `scene_ids` references scenes not in the tour
+- `403` — the tour is not owned by the caller
+- `404` — tour not found
+- `422` — option values outside the allowed ranges
+- `503` — video rendering unavailable (`ffmpeg` is not installed on the server)
 
 ## WebSocket endpoints
 

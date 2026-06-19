@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Images,
+  FolderOpen,
   BarChart3,
   Settings,
   X,
@@ -22,7 +23,8 @@ interface SidebarProps {
 const navItems = [
   { label: 'Dashboard', path: ROUTES.DASHBOARD, icon: LayoutDashboard },
   { label: 'Tours', path: ROUTES.TOURS, icon: Images },
-  { label: 'Analytics', path: '/analytics', icon: BarChart3 },
+  { label: 'Media', path: ROUTES.MEDIA, icon: FolderOpen },
+  { label: 'Analytics', path: ROUTES.ANALYTICS, icon: BarChart3 },
   { label: 'Settings', path: ROUTES.SETTINGS, icon: Settings },
 ];
 

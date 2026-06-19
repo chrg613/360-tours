@@ -14,8 +14,9 @@ This document summarizes the **current** backend implementation contract and hig
 
 ### Tours
 
-- The implementation uses `is_public: boolean` instead of `visibility: private|unlisted|public`.
-  - “Unlisted” is not implemented as a separate mode.
+- The canonical spec uses `visibility: private|unlisted|public`.
+- The backend currently uses `is_public: boolean`.
+- The frontend sends and expects the 3-state `visibility` field.
 
 ### Scenes
 
@@ -27,7 +28,8 @@ This document summarizes the **current** backend implementation contract and hig
 ### Hotspots
 
 - Hotspots are stored with `type` plus an optional JSON `content` payload.
-- Update endpoint uses `PUT /api/v1/hotspots/{hotspot_id}` (not `PATCH`).
+- The frontend sends `PATCH /api/v1/hotspots/{hotspot_id}` for partial updates (aligns with canonical spec).
+- The backend supports `PATCH`, with `PUT` accepted as a legacy alias (the same is true for `PATCH /api/v1/tours/{tour_id}`, `PATCH /api/v1/scenes/{scene_id}`, and `POST /api/v1/tours/{tour_id}/scenes/reorder`).
 - The backend now normalizes and validates typed content for `link`, `audio`, `video`, `info`, and `custom`.
 
 ### Floor plans
@@ -37,15 +39,12 @@ This document summarizes the **current** backend implementation contract and hig
   - `PUT /api/v1/tours/{tour_id}/floor-plans/{floor_plan_id}`
   - `PUT /api/v1/tours/{tour_id}/floor-plans/{floor_plan_id}/markers`
   - `DELETE /api/v1/tours/{tour_id}/floor-plans/{floor_plan_id}`
-- Public tour payloads “hydrate” `settings.floor_plans` from the `floor_plans` table for viewer consumption.
+- Public tour payloads "hydrate" `settings.floor_plans` from the `floor_plans` table for viewer consumption.
 
 ### Uploads
 
-- `POST /api/v1/upload/presigned` returns `signed_url` for a direct Supabase Storage `PUT` plus a `public_url` for asset usage.
-- Clients must upload with Supabase headers:
-  - `apikey: <SUPABASE_PUBLISHABLE_KEY>`
-  - `Authorization: Bearer <access_token>`
-  - `Content-Type: <file mime type>`
+- `POST /api/v1/upload` accepts multipart form data (`file`, `folder`, `visibility`) and uploads to Cloudinary.
+- Returns `{ public_url, file_path, file_size, content_type }`.
 
 ### Analytics
 
@@ -59,11 +58,13 @@ This document summarizes the **current** backend implementation contract and hig
   - `GET /share/tours/{tour_id}?redirect=<viewer_url>`
   - Renders Open Graph + Twitter card meta tags, then redirects humans to the viewer.
 
-## Known backend gaps (TODOs)
+## Backend gaps to resolve
 
-The following items are documented in the canonical API spec but not yet implemented in the backend:
+The following items differ between what the frontend sends/expects and what the backend currently implements:
 
-1. **Visibility field**: The spec uses `visibility: private|unlisted|public` but the backend currently uses `is_public: boolean`. Unlisted is not a separate mode. Backend needs to migrate to the `visibility` enum.
-2. **Hotspot update method**: The spec uses `PATCH /api/v1/hotspots/{hotspot_id}` but the backend uses `PUT`. Backend should support `PATCH` for partial updates.
-3. **Scene create input**: The spec accepts `image_url` directly. No `image_file_id` indirection is needed.
-4. **Scene metadata key**: Stored as `scene_metadata` in DB but serialized as `metadata` in API responses. Requests may send either key.
+| # | Area | Frontend Expects | Backend Currently | Action |
+|---|------|-----------------|-------------------|--------|
+| 1 | Tour visibility | `visibility: "private" \| "unlisted" \| "public"` | `is_public: boolean` | Backend needs to support the 3-state `visibility` field. Map `is_public=true` → `public`, `is_public=false` → `private` as interim. |
+| 2 | Hotspot update | `PATCH /api/v1/hotspots/{hotspot_id}` with partial body | `PATCH` supported (`PUT` kept as legacy alias) | Resolved. No change needed. |
+| 3 | Scene metadata key | Sends/receives `metadata` key | Stored as `scene_metadata` in DB, serialized as `metadata` | Backend should accept both keys in requests. |
+| 4 | Scene create | Sends `image_url` directly | Already works | No change needed. |

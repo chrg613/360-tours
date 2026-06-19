@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, extractData } from './client';
 import type { User } from '@/types';
 
 export interface UpdateProfileData {
@@ -8,19 +8,6 @@ export interface UpdateProfileData {
   notification_settings?: Record<string, boolean>;
   privacy_settings?: Record<string, boolean>;
   preferences?: Record<string, unknown>;
-}
-
-export interface ChangePasswordData {
-  current_password: string;
-  new_password: string;
-}
-
-/**
- * Helper to extract data from API response.
- * Backend returns data directly (no wrapper), so we just return response.data.
- */
-function extractData<T>(response: { data: T }): T {
-  return response.data;
 }
 
 export const usersApi = {
@@ -41,19 +28,12 @@ export const usersApi = {
   },
 
   /**
-   * Change password
-   */
-  async changePassword(data: ChangePasswordData): Promise<void> {
-    await apiClient.put('/users/me/password', data);
-  },
-
-  /**
    * Upload profile image
    */
-  async uploadProfileImage(file: File): Promise<{ url: string }> {
+  async uploadProfileImage(file: File): Promise<User> {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await apiClient.post<{ url: string }>(
+    const response = await apiClient.post<User>(
       '/users/me/profile-image',
       formData,
       {
@@ -63,41 +43,5 @@ export const usersApi = {
       }
     );
     return extractData(response);
-  },
-
-  /**
-   * Delete profile image
-   */
-  async deleteProfileImage(): Promise<void> {
-    await apiClient.delete('/users/me/profile-image');
-  },
-
-  /**
-   * Get user's usage statistics
-   */
-  async getUsageStats(): Promise<{
-    tours_count: number;
-    scenes_count: number;
-    storage_used: number;
-    storage_limit: number;
-    api_calls_this_month: number;
-  }> {
-    const response = await apiClient.get<{
-      tours_count: number;
-      scenes_count: number;
-      storage_used: number;
-      storage_limit: number;
-      api_calls_this_month: number;
-    }>('/users/me/usage');
-    return extractData(response);
-  },
-
-  /**
-   * Delete account
-   */
-  async deleteAccount(password: string): Promise<void> {
-    await apiClient.delete('/users/me', {
-      data: { password },
-    });
   },
 };

@@ -1,9 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Upload, X, Images, ArrowLeft, Loader2 } from 'lucide-react';
+import { Upload, X, Images, ArrowLeft, Loader2, Sparkles } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -21,6 +21,7 @@ import { validateImageFile } from '@/utils/validation';
 import { ROUTES, QUERY_KEYS, DEFAULT_TOUR_SETTINGS } from '@/constants';
 import { cn } from '@/utils';
 import type { Tour } from '@/types';
+import { AITourWizard } from '@/components/features';
 
 interface UploadingFile {
   file: File;
@@ -36,10 +37,12 @@ export function TourCreatePage() {
   const [step, setStep] = useState<'info' | 'upload'>('info');
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [createdTour, setCreatedTour] = useState<Tour | null>(null);
+  const [showAIWizard, setShowAIWizard] = useState(false);
 
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<TourFormData>({
     resolver: zodResolver(tourSchema),
@@ -47,10 +50,24 @@ export function TourCreatePage() {
       title: '',
       description: '',
       status: 'draft',
-      is_public: false,
+      visibility: 'private',
       settings: DEFAULT_TOUR_SETTINGS,
     },
   });
+
+  // Pre-fill the form with createdTour data when returning to the info step
+  // so the user can edit their previously entered info.
+  useEffect(() => {
+    if (createdTour && step === 'info') {
+      reset({
+        title: createdTour.title,
+        description: createdTour.description ?? '',
+        status: createdTour.status,
+        visibility: createdTour.visibility,
+        settings: createdTour.settings ?? DEFAULT_TOUR_SETTINGS,
+      });
+    }
+  }, [createdTour, step, reset]);
 
   // Create tour mutation
   const createMutation = useMutation({
@@ -62,6 +79,16 @@ export function TourCreatePage() {
     },
   });
 
+  // Update tour mutation - used when the user goes back to edit info after
+  // the tour has already been created.
+  const updateTourMutation = useMutation({
+    mutationFn: (data: TourFormData) => toursApi.updateTour(createdTour!.id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.TOUR, createdTour!.id] });
+      setStep('upload');
+    },
+  });
+
   // Add scene mutation
   const addSceneMutation = useMutation({
     mutationFn: ({ tourId, imageUrl }: { tourId: string; imageUrl: string }) =>
@@ -69,7 +96,17 @@ export function TourCreatePage() {
   });
 
   const onSubmit = async (data: TourFormData) => {
-    await createMutation.mutateAsync(data);
+    if (createdTour) {
+      await updateTourMutation.mutateAsync(data);
+    } else {
+      await createMutation.mutateAsync(data);
+    }
+  };
+
+  const handleAIComplete = (tour: Tour) => {
+    queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.TOURS] });
+    queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.TOUR, tour.id] });
+    navigate(`/tours/${tour.id}/edit`);
   };
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -130,46 +167,63 @@ export function TourCreatePage() {
   const uploadFiles = async () => {
     if (!createdTour) return;
 
-    for (let i = 0; i < uploadingFiles.length; i++) {
-      const uploadFile = uploadingFiles[i];
-      if (uploadFile.status !== 'pending') continue;
+    const pending = uploadingFiles
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => item.status === 'pending');
 
-      setUploadingFiles((prev) =>
-        prev.map((f, idx) => (idx === i ? { ...f, status: 'uploading' as const } : f))
-      );
+    if (pending.length === 0) return;
 
-      try {
-        const result = await uploadApi.uploadFile(uploadFile.file, {
-          folder: 'scenes',
-          visibility: 'public',
-          onProgress: (progress) => {
-            setUploadingFiles((prev) =>
-              prev.map((f, idx) => (idx === i ? { ...f, progress } : f))
-            );
-          },
-        });
+    // Mark all pending files as uploading immediately (parallel uploads)
+    setUploadingFiles((prev) =>
+      prev.map((f, idx) =>
+        pending.some((p) => p.index === idx)
+          ? { ...f, status: 'uploading' as const, progress: 0 }
+          : f
+      )
+    );
 
-        // Add scene to tour
-        await addSceneMutation.mutateAsync({
-          tourId: createdTour.id,
-          imageUrl: result.public_url,
-        });
+    await Promise.allSettled(
+      pending.map(async ({ item, index }) => {
+        try {
+          const uploadResult = await uploadApi.uploadFile(item.file, {
+            folder: 'scenes',
+            visibility: 'public',
+            onProgress: (progress) => {
+              setUploadingFiles((prev) =>
+                prev.map((f, idx) =>
+                  idx === index ? { ...f, progress } : f
+                )
+              );
+            },
+          });
 
-        setUploadingFiles((prev) =>
-          prev.map((f, idx) =>
-            idx === i ? { ...f, status: 'completed' as const, url: result.public_url } : f
-          )
-        );
-      } catch (err) {
-        setUploadingFiles((prev) =>
-          prev.map((f, idx) =>
-            idx === i
-              ? { ...f, status: 'error' as const, error: 'Upload failed' }
-              : f
-          )
-        );
-      }
-    }
+          await addSceneMutation.mutateAsync({
+            tourId: createdTour.id,
+            imageUrl: uploadResult.public_url,
+          });
+
+          setUploadingFiles((prev) =>
+            prev.map((f, idx) =>
+              idx === index
+                ? { ...f, status: 'completed' as const, progress: 100, url: uploadResult.public_url }
+                : f
+            )
+          );
+        } catch (err) {
+          setUploadingFiles((prev) =>
+            prev.map((f, idx) =>
+              idx === index
+                ? {
+                    ...f,
+                    status: 'error' as const,
+                    error: err instanceof Error ? err.message : 'Upload failed',
+                  }
+                : f
+            )
+          );
+        }
+      })
+    );
 
     // Refresh tour data
     queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.TOURS] });
@@ -179,6 +233,17 @@ export function TourCreatePage() {
   const pendingCount = uploadingFiles.filter((f) => f.status === 'pending').length;
   const completedCount = uploadingFiles.filter((f) => f.status === 'completed').length;
   const isUploading = uploadingFiles.some((f) => f.status === 'uploading');
+
+  const totalUploadBytes = uploadingFiles
+    .filter((f) => f.status === 'pending' || f.status === 'uploading' || f.status === 'completed')
+    .reduce((sum, f) => sum + f.file.size, 0);
+  const uploadedBytes = uploadingFiles
+    .filter((f) => f.status === 'pending' || f.status === 'uploading' || f.status === 'completed')
+    .reduce((sum, f) => {
+      if (f.status === 'completed') return sum + f.file.size;
+      return sum + Math.round((f.progress / 100) * f.file.size);
+    }, 0);
+  const overallProgress = totalUploadBytes > 0 ? Math.round((uploadedBytes * 100) / totalUploadBytes) : 0;
 
   return (
     <div className="animate-fade-in mx-auto max-w-2xl space-y-6">
@@ -198,6 +263,12 @@ export function TourCreatePage() {
           <p className="text-[var(--color-text-muted)]">
             {step === 'info' ? 'Step 1: Tour Information' : 'Step 2: Upload Scenes'}
           </p>
+        </div>
+        <div className="ml-auto">
+          <Button variant="outline" onClick={() => setShowAIWizard(true)}>
+            <Sparkles className="h-4 w-4" />
+            AI Generate
+          </Button>
         </div>
       </div>
 
@@ -244,8 +315,8 @@ export function TourCreatePage() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit" isLoading={createMutation.isPending}>
-                  Continue to Upload
+                <Button type="submit" isLoading={createMutation.isPending || updateTourMutation.isPending}>
+                  {createdTour ? 'Save & Return to Upload' : 'Continue to Upload'}
                 </Button>
               </div>
             </form>
@@ -334,10 +405,24 @@ export function TourCreatePage() {
 
           {/* Actions */}
           <div className="flex items-center justify-between">
-            <Button variant="outline" onClick={() => navigate(`/tours/${createdTour.id}/edit`)}>
-              Skip & Edit Later
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setStep('info')}>
+                <ArrowLeft className="h-4 w-4" />
+                Edit Info
+              </Button>
+              <Button variant="outline" onClick={() => navigate(`/tours/${createdTour.id}/edit`)}>
+                Skip & Edit Later
+              </Button>
+            </div>
             <div className="flex items-center gap-4">
+              {uploadingFiles.length > 0 && isUploading && (
+                <div className="hidden w-40 flex-col gap-1 sm:flex">
+                  <Progress value={overallProgress} className="h-1.5" />
+                  <span className="text-xs text-[var(--color-text-muted)]">
+                    {overallProgress}%
+                  </span>
+                </div>
+              )}
               {uploadingFiles.length > 0 && (
                 <span className="text-sm text-[var(--color-text-muted)]">
                   {completedCount} of {uploadingFiles.length} uploaded
@@ -357,6 +442,12 @@ export function TourCreatePage() {
           </div>
         </>
       )}
+
+      <AITourWizard
+        open={showAIWizard}
+        onOpenChange={setShowAIWizard}
+        onComplete={handleAIComplete}
+      />
     </div>
   );
 }
