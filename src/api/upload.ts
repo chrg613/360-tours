@@ -1,5 +1,5 @@
-import { apiClient } from './client';
-import type { FileUploadResponse, MediaFile, PaginatedResponse } from '@/types';
+import { apiClient, extractData } from './client';
+import type { FileUploadResponse, MediaFile, CursorPaginatedResponse } from '@/types';
 
 export interface UploadOptions {
   folder?: string;
@@ -7,19 +7,7 @@ export interface UploadOptions {
   onProgress?: (progress: number) => void;
 }
 
-/**
- * Helper to extract data from API response.
- * Backend returns data directly (no wrapper), so we just return response.data.
- */
-function extractData<T>(response: { data: T }): T {
-  return response.data;
-}
-
 export const uploadApi = {
-  /**
-   * Upload a single file
-   * Backend returns: { file_path, public_url, file_type, file_size, content_type, original_filename }
-   */
   async uploadFile(file: File, options: UploadOptions = {}): Promise<FileUploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
@@ -44,9 +32,6 @@ export const uploadApi = {
     return extractData(response);
   },
 
-  /**
-   * Upload multiple files
-   */
   async uploadFiles(
     files: File[],
     options: UploadOptions = {}
@@ -62,7 +47,7 @@ export const uploadApi = {
       formData.append('visibility', options.visibility);
     }
 
-    const response = await apiClient.post<FileUploadResponse[]>(
+    const response = await apiClient.post<{ items: FileUploadResponse[] }>(
       '/upload/batch',
       formData,
       {
@@ -77,56 +62,43 @@ export const uploadApi = {
         },
       }
     );
-    return extractData(response);
+    return extractData(response).items;
   },
 
-  /**
-   * Get user's media files
-   */
   async getMediaFiles(params?: {
-    page?: number;
-    page_size?: number;
+    cursor?: string | null;
+    limit?: number;
     folder?: string;
     mime_type?: string;
-  }): Promise<PaginatedResponse<MediaFile>> {
-    const response = await apiClient.get<PaginatedResponse<MediaFile>>('/media', {
+  }): Promise<CursorPaginatedResponse<MediaFile>> {
+    const response = await apiClient.get<CursorPaginatedResponse<MediaFile>>('/upload/media', {
       params,
     });
     return extractData(response);
   },
 
-  /**
-   * Get a single media file
-   */
   async getMediaFile(id: string): Promise<MediaFile> {
-    const response = await apiClient.get<MediaFile>(`/media/${id}`);
+    const response = await apiClient.get<MediaFile>(`/upload/media/${id}`);
     return extractData(response);
   },
 
-  /**
-   * Delete a media file
-   */
   async deleteMediaFile(id: string): Promise<void> {
-    await apiClient.delete(`/media/${id}`);
+    await apiClient.delete(`/upload/media/${id}`);
   },
 
-  /**
-   * Get upload URL for direct upload (presigned URL)
-   */
-  async getUploadUrl(params: {
-    filename: string;
-    content_type: string;
-    folder?: string;
-  }): Promise<{
-    upload_url: string;
-    file_url: string;
-    expires_at: string;
-  }> {
-    const response = await apiClient.post<{
-      upload_url: string;
-      file_url: string;
-      expires_at: string;
-    }>('/upload/presigned', params);
-    return extractData(response);
+  async deleteMediaFiles(ids: string[]): Promise<{ deleted: string[]; failed: { id: string; error: string }[] }> {
+    const deleted: string[] = [];
+    const failed: { id: string; error: string }[] = [];
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          await apiClient.delete(`/upload/media/${id}`);
+          deleted.push(id);
+        } catch (err) {
+          failed.push({ id, error: (err as Error).message });
+        }
+      })
+    );
+    return { deleted, failed };
   },
 };

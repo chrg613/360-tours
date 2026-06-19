@@ -33,6 +33,7 @@ interface UIActions {
 type UIStore = UIState & UIActions;
 
 let toastId = 0;
+const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const generateToastId = () => `toast-${++toastId}`;
 
 export const useUIStore = create<UIStore>()(
@@ -85,13 +86,20 @@ export const useUIStore = create<UIStore>()(
 
         // Auto-remove toast after duration
         if (newToast.duration && newToast.duration > 0) {
-          setTimeout(() => {
+          const timer = setTimeout(() => {
+            toastTimers.delete(id);
             get().removeToast(id);
           }, newToast.duration);
+          toastTimers.set(id, timer);
         }
       },
 
       removeToast: (id) => {
+        const timer = toastTimers.get(id);
+        if (timer) {
+          clearTimeout(timer);
+          toastTimers.delete(id);
+        }
         set((state) => ({
           toasts: state.toasts.filter((t) => t.id !== id),
         }));
@@ -107,6 +115,12 @@ export const useUIStore = create<UIStore>()(
         theme: state.theme,
         sidebarCollapsed: state.sidebarCollapsed,
       }),
+      onRehydrateStorage: () => (state) => {
+        // Apply stored theme after rehydration instead of at module import time
+        if (state?.theme) {
+          applyTheme(state.theme);
+        }
+      },
     }
   )
 );
@@ -120,20 +134,5 @@ function applyTheme(theme: Theme): void {
     root.classList.toggle('dark', prefersDark);
   } else {
     root.classList.toggle('dark', theme === 'dark');
-  }
-}
-
-// Initialize theme on load
-if (typeof window !== 'undefined') {
-  const storedTheme = localStorage.getItem(STORAGE_KEYS.THEME);
-  if (storedTheme) {
-    try {
-      const { state } = JSON.parse(storedTheme);
-      if (state?.theme) {
-        applyTheme(state.theme);
-      }
-    } catch {
-      // Ignore parse errors
-    }
   }
 }

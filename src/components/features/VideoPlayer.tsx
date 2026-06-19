@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Play,
   Pause,
@@ -14,8 +14,15 @@ import {
 import { Button, Slider, Popover, PopoverContent, PopoverTrigger } from '@/components/ui';
 import { cn } from '@/utils';
 
-interface VideoPlayerProps {
+export interface VideoSource {
   src: string;
+  quality: '720p' | '1080p' | '4k';
+  type?: string;
+}
+
+interface VideoPlayerProps {
+  src?: string;
+  sources?: VideoSource[];
   poster?: string;
   autoPlay?: boolean;
   loop?: boolean;
@@ -27,6 +34,7 @@ interface VideoPlayerProps {
 
 export function VideoPlayer({
   src,
+  sources,
   poster,
   autoPlay = false,
   loop = false,
@@ -50,6 +58,18 @@ export function VideoPlayer({
   const [showControls, setShowControls] = useState(true);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [quality, setQuality] = useState<'auto' | '720p' | '1080p' | '4k'>('auto');
+
+  const availableQualities = useMemo(
+    () => (sources ? sources.map((s) => s.quality) : []),
+    [sources]
+  );
+  const activeSrc = useMemo(() => {
+    if (!sources || sources.length === 0) return src;
+    if (quality === 'auto') {
+      return sources.find((s) => s.quality === '1080p')?.src ?? sources[sources.length - 1]?.src ?? src;
+    }
+    return sources.find((s) => s.quality === quality)?.src ?? src;
+  }, [sources, quality, src]);
 
   const hideControlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -134,6 +154,19 @@ export function VideoPlayer({
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, []);
+
+  // Swap the video source while preserving currentTime/play state
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !activeSrc) return;
+    if (video.src === activeSrc || video.getAttribute('src') === activeSrc) return;
+    const currentTime = video.currentTime;
+    const wasPlaying = !video.paused;
+    video.src = activeSrc;
+    video.load();
+    video.currentTime = currentTime;
+    if (wasPlaying) void video.play().catch(() => {});
+  }, [activeSrc]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -220,7 +253,6 @@ export function VideoPlayer({
       {/* Video Element */}
       <video
         ref={videoRef}
-        src={src}
         poster={poster}
         autoPlay={autoPlay}
         loop={loop}
@@ -387,12 +419,13 @@ export function VideoPlayer({
                         <button
                           key={q}
                           className={cn(
-                            'px-2 py-1 text-xs rounded capitalize',
+                            'px-2 py-1 text-xs rounded capitalize disabled:opacity-40 disabled:cursor-not-allowed',
                             quality === q
                               ? 'bg-[var(--color-primary-500)] text-white'
                               : 'bg-[var(--color-surface)] hover:bg-[var(--color-surface-elevated)]'
                           )}
                           onClick={() => setQuality(q)}
+                          disabled={q !== 'auto' && !availableQualities.includes(q)}
                         >
                           {q}
                         </button>

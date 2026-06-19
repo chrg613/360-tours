@@ -1,11 +1,9 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import {
   Video,
   Upload,
   X,
-  Play,
-  Pause,
   Clock,
   CheckCircle2,
   AlertCircle,
@@ -33,6 +31,7 @@ import {
   Alert,
   AlertDescription,
 } from '@/components/ui';
+import { uploadApi } from '@/api';
 import { cn } from '@/utils';
 
 interface VideoFile {
@@ -74,7 +73,6 @@ export function VideoUploader({
   const [videos, setVideos] = useState<VideoFile[]>([]);
   const [quality, setQuality] = useState<'auto' | '720p' | '1080p' | '4k'>('auto');
   const [isUploading, setIsUploading] = useState(false);
-  const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -95,9 +93,23 @@ export function VideoUploader({
       const video = document.createElement('video');
       video.preload = 'metadata';
       video.muted = true;
+      const objectUrl = URL.createObjectURL(file);
+      let settled = false;
+
+      const dispose = () => {
+        if (!settled) {
+          settled = true;
+          URL.revokeObjectURL(objectUrl);
+        }
+      };
 
       video.onloadeddata = () => {
-        video.currentTime = 1; // Seek to 1 second
+        // Clamp seek target to a small fraction of duration to support very
+        // short videos where seeking to 1s would never fire `onseeked`.
+        const target = video.duration && isFinite(video.duration) && video.duration < 1
+          ? video.duration / 2
+          : 1;
+        video.currentTime = Math.min(target, video.duration || target);
       };
 
       video.onseeked = () => {
@@ -107,18 +119,29 @@ export function VideoUploader({
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(video, 0, 0);
+          dispose();
           resolve(canvas.toDataURL('image/jpeg', 0.8));
         } else {
+          dispose();
           reject(new Error('Failed to get canvas context'));
         }
-        URL.revokeObjectURL(video.src);
       };
 
       video.onerror = () => {
+        dispose();
         reject(new Error('Failed to load video'));
       };
 
-      video.src = URL.createObjectURL(file);
+      // Safety net: if neither onseeked nor onerror fires (e.g., decode stall),
+      // revoke after a timeout so the blob URL is never orphaned.
+      setTimeout(() => {
+        if (!settled) {
+          dispose();
+          reject(new Error('Timed out extracting thumbnail'));
+        }
+      }, 10000);
+
+      video.src = objectUrl;
     });
   };
 
@@ -126,17 +149,19 @@ export function VideoUploader({
     return new Promise((resolve, reject) => {
       const video = document.createElement('video');
       video.preload = 'metadata';
+      const objectUrl = URL.createObjectURL(file);
 
       video.onloadedmetadata = () => {
         resolve(video.duration);
-        URL.revokeObjectURL(video.src);
+        URL.revokeObjectURL(objectUrl);
       };
 
       video.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
         reject(new Error('Failed to load video metadata'));
       };
 
-      video.src = URL.createObjectURL(file);
+      video.src = objectUrl;
     });
   };
 
@@ -168,7 +193,7 @@ export function VideoUploader({
             status: 'pending',
             progress: 0,
           });
-        } catch (error) {
+        } catch {
           newVideos.push({
             id,
             file,
@@ -208,45 +233,34 @@ export function VideoUploader({
 
     for (const video of pendingVideos) {
       try {
-        // Update status to uploading
         setVideos((prev) =>
           prev.map((v) =>
-            v.id === video.id ? { ...v, status: 'uploading' as const } : v
+            v.id === video.id ? { ...v, status: 'uploading' as const, progress: 0 } : v
           )
         );
 
-        // Simulate upload progress
-        for (let progress = 0; progress <= 100; progress += 10) {
-          await new Promise((resolve) => setTimeout(resolve, 200));
-          setVideos((prev) =>
-            prev.map((v) =>
-              v.id === video.id ? { ...v, progress } : v
-            )
-          );
-        }
+        const uploadResult = await uploadApi.uploadFile(video.file, {
+          folder: 'hotspot_media',
+          visibility: 'public',
+          onProgress: (progress) => {
+            setVideos((prev) =>
+              prev.map((v) =>
+                v.id === video.id ? { ...v, progress } : v
+              )
+            );
+          },
+        });
 
-        // Simulate processing
-        setVideos((prev) =>
-          prev.map((v) =>
-            v.id === video.id ? { ...v, status: 'processing' as const, progress: 100 } : v
-          )
-        );
-
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-
-        // Mark as ready
-        const fakeUrl = `https://cdn.360viewer.app/videos/${video.id}.mp4`;
         setVideos((prev) =>
           prev.map((v) =>
             v.id === video.id
-              ? { ...v, status: 'ready' as const, url: fakeUrl }
+              ? { ...v, status: 'ready' as const, progress: 100, url: uploadResult.public_url }
               : v
           )
         );
 
-        // Notify parent
         onUploadComplete({
-          url: fakeUrl,
+          url: uploadResult.public_url,
           thumbnail_url: video.thumbnail || '',
           duration: video.duration || 0,
           title: video.name.replace(/\.[^/.]+$/, ''),

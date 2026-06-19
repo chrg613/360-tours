@@ -1,4 +1,4 @@
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Camera, Loader2 } from 'lucide-react';
 import {
@@ -10,19 +10,22 @@ import {
   Button,
   Input,
   Avatar,
+  PhoneInput,
 } from '@/components/ui';
 import { usersApi } from '@/api';
 import { useAuthStore } from '@/stores';
+import { useToast } from '@/hooks/useToast';
 import { QUERY_KEYS } from '@/constants';
 import { useRef, useState } from 'react';
 
 export function ProfilePage() {
   const { user, setUser } = useAuthStore();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
-  const { register, handleSubmit, formState: { errors, isDirty } } = useForm({
+  const { register, handleSubmit, control, formState: { errors, isDirty } } = useForm({
     defaultValues: {
       full_name: user?.full_name || '',
       phone: user?.phone || '',
@@ -36,6 +39,10 @@ export function ProfilePage() {
     onSuccess: (updatedUser) => {
       setUser(updatedUser);
       queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.USER] });
+      toast('success', 'Your profile has been updated.', { title: 'Profile saved' });
+    },
+    onError: (error: Error) => {
+      toast('error', error.message || 'Failed to update profile.', { title: 'Error' });
     },
   });
 
@@ -46,10 +53,13 @@ export function ProfilePage() {
 
     setIsUploadingImage(true);
     try {
-      const result = await usersApi.uploadProfileImage(file);
-      if (user) {
-        setUser({ ...user, profile_image_url: result.url });
-      }
+      const updatedUser = await usersApi.uploadProfileImage(file);
+      setUser(updatedUser);
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.USER] });
+      toast('success', 'Profile photo updated.', { title: 'Photo uploaded' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to upload image.';
+      toast('error', message, { title: 'Upload failed' });
     } finally {
       setIsUploadingImage(false);
     }
@@ -132,12 +142,23 @@ export function ProfilePage() {
               disabled
               helperText="Contact support to change your email"
             />
-            <Input
-              label="Phone"
-              {...register('phone')}
-              placeholder="+1 234 567 8900"
-              error={errors.phone?.message}
-            />
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-[var(--color-text-primary)]">
+                Phone
+              </label>
+              <Controller
+                name="phone"
+                control={control}
+                render={({ field }) => (
+                  <PhoneInput
+                    value={field.value}
+                    onChange={field.onChange}
+                    error={errors.phone?.message}
+                    placeholder="Phone number"
+                  />
+                )}
+              />
+            </div>
             <div className="flex justify-end">
               <Button
                 type="submit"

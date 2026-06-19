@@ -41,12 +41,11 @@ Notes:
 
 ## Upload flow (MVP)
 
-The backend MUST support a presigned upload flow:
+The backend supports a direct upload flow via Cloudinary:
 
-1. Client calls `POST /api/v1/uploads/presign` with filename, MIME type, and byte size.
-2. Client uploads bytes to `upload_url` using the provided method/headers.
-3. Client calls `POST /api/v1/uploads/complete`.
-4. Backend returns a `MediaFile` record and (optionally) triggers processing.
+1. Client calls `POST /api/v1/upload` with multipart form data (`file`, `folder`, `visibility`).
+2. Backend uploads to Cloudinary and returns `{ public_url, file_path }`.
+3. Client updates the relevant resource to reference `public_url` (e.g., `Scene.image_url`, `FloorPlan.image_url`).
 
 Uploads MUST validate:
 - MIME type and extension
@@ -63,6 +62,16 @@ Typical stages:
 - Generate thumbnails
 - Generate web-optimized derivatives (e.g., WebP)
 - (Optional) generate higher quality/VR derivatives
+
+### Reel videos
+
+AI-generated 360 reels (see `../features/reel-generation.md`) are stored in Cloudinary with `resource_type=video`:
+
+- Folder pattern: `tours/{tour_id}/reels/{job_id}.mp4`
+- Thumbnail: a derived `.jpg` at the same path (Cloudinary video-to-image derivative).
+- Format: H.264 MP4, 1080×1920 @ 30fps (vertical 9:16).
+- Typical size: ~10–30 MB per reel.
+- Reels are generated server-side via `ffmpeg`; clients never upload reel video bytes.
 
 ## Access control and URLs
 

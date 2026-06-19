@@ -1,8 +1,48 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
-import { API_BASE_URL, API_TIMEOUT, STORAGE_KEYS, ROUTES, ERROR_MESSAGES } from '@/constants';
-import type { AuthTokens, ApiError } from '@/types';
+import { API_BASE_URL, API_TIMEOUT, ERROR_MESSAGES } from '@/constants';
+import type { ApiError } from '@/types';
+import { supabaseAuth } from '@/lib/supabaseAuth';
 
-// Create axios instance
+const MAX_RETRY_ATTEMPTS = 3;
+const MAX_TOKEN_RETRY_ATTEMPTS = 1;
+
+let isRefreshingToken = false;
+let refreshPromise: Promise<string | null> | null = null;
+
+const authExpiredListeners: Array<() => void> = [];
+
+export function onAuthExpired(listener: () => void): () => void {
+  authExpiredListeners.push(listener);
+  return () => {
+    const idx = authExpiredListeners.indexOf(listener);
+    if (idx !== -1) authExpiredListeners.splice(idx, 1);
+  };
+}
+
+function notifyAuthExpired() {
+  for (const listener of authExpiredListeners) {
+    try {
+      listener();
+    } catch {
+      // listener errors should not break other listeners
+    }
+  }
+}
+
+async function tryRefreshToken(): Promise<string | null> {
+  if (!isRefreshingToken) {
+    isRefreshingToken = true;
+    refreshPromise = supabaseAuth.getAccessToken();
+  }
+  try {
+    const token = await refreshPromise;
+    return token;
+  } finally {
+    isRefreshingToken = false;
+    refreshPromise = null;
+  }
+}
+
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   timeout: API_TIMEOUT,
@@ -11,63 +51,11 @@ const apiClient: AxiosInstance = axios.create({
   },
 });
 
-// Token management
-// Zustand persist stores: { state: { tokens: {...} }, version: 0 }
-// We need to extract tokens from this format
-function getTokens(): AuthTokens | null {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.AUTH_TOKENS);
-    if (!stored) return null;
-
-    const parsed = JSON.parse(stored);
-    // Handle Zustand persist format
-    if (parsed?.state?.tokens) {
-      return parsed.state.tokens;
-    }
-    // Handle raw token format (for backwards compatibility)
-    if (parsed?.access_token) {
-      return parsed;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function setTokens(tokens: AuthTokens): void {
-  // Update in Zustand persist format for consistency
-  const stored = localStorage.getItem(STORAGE_KEYS.AUTH_TOKENS);
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored);
-      if (parsed?.state) {
-        // Update existing Zustand format
-        parsed.state.tokens = tokens;
-        localStorage.setItem(STORAGE_KEYS.AUTH_TOKENS, JSON.stringify(parsed));
-        return;
-      }
-    } catch {
-      // Fall through to default behavior
-    }
-  }
-  // Create new Zustand-compatible format
-  localStorage.setItem(
-    STORAGE_KEYS.AUTH_TOKENS,
-    JSON.stringify({ state: { tokens }, version: 0 })
-  );
-}
-
-function clearTokens(): void {
-  localStorage.removeItem(STORAGE_KEYS.AUTH_TOKENS);
-  localStorage.removeItem(STORAGE_KEYS.USER);
-}
-
-// Request interceptor - Add auth token
 apiClient.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    const tokens = getTokens();
-    if (tokens?.access_token) {
-      config.headers.Authorization = `Bearer ${tokens.access_token}`;
+  async (config: InternalAxiosRequestConfig) => {
+    const accessToken = await supabaseAuth.getAccessToken();
+    if (accessToken) {
+      config.headers.Authorization = `Bearer ${accessToken}`;
     }
     return config;
   },
@@ -76,44 +64,86 @@ apiClient.interceptors.request.use(
   }
 );
 
-// Response interceptor - Handle errors and token refresh
 apiClient.interceptors.response.use(
   response => response,
   async (error: AxiosError<ApiError>) => {
     const originalRequest = error.config;
 
-    // Handle 401 Unauthorized
-    if (error.response?.status === 401 && originalRequest) {
-      // Try to refresh token
-      const tokens = getTokens();
-      if (tokens?.refresh_token) {
-        try {
-          const refreshResponse = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-            refresh_token: tokens.refresh_token,
-          });
+    if (originalRequest) {
+      const extendedRequest = originalRequest as InternalAxiosRequestConfig & {
+        _tokenRetryCount?: number;
+        _retryCount?: number;
+        _skipAuthExpiry?: boolean;
+      };
 
-          // Backend returns data directly, not wrapped
-          const newTokens: AuthTokens = refreshResponse.data;
-          setTokens(newTokens);
+      if (error.response?.status === 401) {
+        // Non-critical requests (e.g. recordLastMethod) should not trigger the
+        // sign-out cascade — just reject so the caller can handle it.
+        if (extendedRequest._skipAuthExpiry) {
+          return Promise.reject(error);
+        }
 
-          // Retry original request with new token
-          originalRequest.headers.Authorization = `Bearer ${newTokens.access_token}`;
-          return apiClient(originalRequest);
-        } catch {
-          // Refresh failed - clear tokens and redirect to login
-          clearTokens();
-          window.location.href = ROUTES.LOGIN;
+        const tokenRetryCount = extendedRequest._tokenRetryCount || 0;
+
+        if (tokenRetryCount >= MAX_TOKEN_RETRY_ATTEMPTS) {
+          await supabaseAuth.signOut().catch(() => {});
+          notifyAuthExpired();
           return Promise.reject(new Error(ERROR_MESSAGES.SESSION_EXPIRED));
         }
-      } else {
-        // No refresh token - redirect to login
-        clearTokens();
-        window.location.href = ROUTES.LOGIN;
+
+        extendedRequest._tokenRetryCount = tokenRetryCount + 1;
+
+        try {
+          const newToken = await tryRefreshToken();
+          if (newToken) {
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            return apiClient(originalRequest);
+          }
+        } catch {
+          // refresh failed, fall through to sign-out
+        }
+
+        await supabaseAuth.signOut().catch(() => {});
+        notifyAuthExpired();
         return Promise.reject(new Error(ERROR_MESSAGES.SESSION_EXPIRED));
       }
+
+      if (error.response?.status === 429) {
+        const retryCount = extendedRequest._retryCount || 0;
+
+        if (retryCount < MAX_RETRY_ATTEMPTS) {
+          extendedRequest._retryCount = retryCount + 1;
+
+          const retryAfter = error.response.headers?.['retry-after'];
+          const parsedRetryAfter = parseInt(retryAfter as string, 10);
+          const delayMs = Number.isFinite(parsedRetryAfter) && parsedRetryAfter > 0
+            ? parsedRetryAfter * 1000
+            : Math.min(1000 * 2 ** retryCount, 10000);
+
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          return apiClient(originalRequest);
+        }
+      }
+
+      // Retry 5xx server errors and network failures (with exponential backoff).
+      // Disabled in test environment to prevent interceptor re-entry in unit tests.
+      const isNetworkError = !error.response;
+      const isServerError = error.response?.status !== undefined && error.response.status >= 500;
+      if ((isNetworkError || isServerError) && !import.meta.env?.TEST) {
+        const retryCount = extendedRequest._retryCount || 0;
+        if (retryCount < MAX_RETRY_ATTEMPTS) {
+          extendedRequest._retryCount = retryCount + 1;
+          const delayMs = Math.min(1000 * 2 ** retryCount, 10000);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          return apiClient(originalRequest);
+        }
+      }
+
+      // 429 and 5xx retries already handled above.
+      // 401 retries already handled above.
+      // Fall through to error message extraction for all other errors.
     }
 
-    // Handle other errors - backend returns { detail: { code, message } } or { detail: string }
     let errorMessage: string = ERROR_MESSAGES.GENERIC;
     const responseData = error.response?.data;
 
@@ -129,10 +159,15 @@ apiClient.interceptors.response.use(
       errorMessage = error.message;
     }
 
-    return Promise.reject(new Error(errorMessage));
+    // Preserve the original error as the cause for debugging
+    error.message = errorMessage;
+    return Promise.reject(error);
   }
 );
 
-// Export utilities
-export { apiClient, getTokens, setTokens, clearTokens };
+export function extractData<T>(response: { data: T }): T {
+  return response.data;
+}
+
 export default apiClient;
+export { apiClient };

@@ -1,21 +1,27 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, ExternalLink, Volume2, VolumeX, Play, Pause } from 'lucide-react';
+import { ExternalLink, Volume2, VolumeX, Play, Pause } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui';
 import { Button } from '@/components/ui';
 import { VideoPlayer } from './VideoPlayer';
-import { cn } from '@/utils';
+import { parseVideoUrl, buildVideoEmbedUrl } from '@/utils/videoUrl';
 import type { Hotspot } from '@/types';
 
 interface HotspotContentModalProps {
   hotspot: Hotspot | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Optional controlled mute state for audio hotspots. */
+  muted?: boolean;
+  /** Optional callback invoked when the internal mute toggle changes. */
+  onMutedChange?: (muted: boolean) => void;
 }
 
 export function HotspotContentModal({
   hotspot,
   open,
   onOpenChange,
+  muted,
+  onMutedChange,
 }: HotspotContentModalProps) {
   if (!hotspot) return null;
 
@@ -33,7 +39,9 @@ export function HotspotContentModal({
 
         <div className="mt-4">
           {hotspot.type === 'info' && <InfoContent hotspot={hotspot} />}
-          {hotspot.type === 'audio' && <AudioContent hotspot={hotspot} />}
+          {hotspot.type === 'audio' && (
+            <AudioContent hotspot={hotspot} muted={muted} onMutedChange={onMutedChange} />
+          )}
           {hotspot.type === 'video' && <VideoContent hotspot={hotspot} />}
           {hotspot.type === 'link' && <LinkContent hotspot={hotspot} onClose={handleClose} />}
           {hotspot.type === 'custom' && <CustomContent hotspot={hotspot} />}
@@ -67,13 +75,10 @@ function InfoContent({ hotspot }: { hotspot: Hotspot }) {
     image_url?: string;
   } | null;
 
+  const displayText = content?.text || hotspot.description;
+
   return (
     <div className="space-y-4">
-      {/* Description */}
-      {hotspot.description && (
-        <p className="text-[var(--color-text-secondary)]">{hotspot.description}</p>
-      )}
-
       {/* Image */}
       {content?.image_url && (
         <div className="rounded-lg overflow-hidden">
@@ -87,21 +92,18 @@ function InfoContent({ hotspot }: { hotspot: Hotspot }) {
 
       {/* HTML content */}
       {content?.html && (
-        <div
-          className="prose prose-sm max-w-none dark:prose-invert"
-          dangerouslySetInnerHTML={{ __html: content.html }}
-        />
+        <SandboxedHtml html={content.html} />
       )}
 
       {/* Text content */}
-      {content?.text && !content?.html && (
+      {displayText && !content?.html && (
         <p className="text-[var(--color-text-secondary)] whitespace-pre-wrap">
-          {content.text}
+          {displayText}
         </p>
       )}
 
       {/* Fallback if no content */}
-      {!hotspot.description && !content?.html && !content?.text && !content?.image_url && (
+      {!displayText && !content?.html && !content?.image_url && (
         <p className="text-[var(--color-text-muted)] italic">
           No additional information available.
         </p>
@@ -110,12 +112,35 @@ function InfoContent({ hotspot }: { hotspot: Hotspot }) {
   );
 }
 
-function AudioContent({ hotspot }: { hotspot: Hotspot }) {
+function AudioContent({
+  hotspot,
+  muted: controlledMuted,
+  onMutedChange,
+}: {
+  hotspot: Hotspot;
+  muted?: boolean;
+  onMutedChange?: (muted: boolean) => void;
+}) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [isMuted, setIsMuted] = useState(false);
+  const [internalMuted, setInternalMuted] = useState(false);
+
+  const isControlled = controlledMuted !== undefined;
+  const isMuted = isControlled ? (controlledMuted as boolean) : internalMuted;
+
+  const setIsMutedState = (next: boolean) => {
+    if (onMutedChange) onMutedChange(next);
+    if (!isControlled) setInternalMuted(next);
+  };
+
+  // Keep the audio element in sync with the (possibly controlled) mute state.
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.muted = isMuted;
+    }
+  }, [isMuted]);
 
   const content = hotspot.content as {
     audio_url?: string;
@@ -231,8 +256,9 @@ function AudioContent({ hotspot }: { hotspot: Hotspot }) {
             size="icon-sm"
             onClick={() => {
               if (audioRef.current) {
-                audioRef.current.muted = !isMuted;
-                setIsMuted(!isMuted);
+                const next = !isMuted;
+                audioRef.current.muted = next;
+                setIsMutedState(next);
               }
             }}
           >
@@ -255,18 +281,25 @@ function VideoContent({ hotspot }: { hotspot: Hotspot }) {
     vimeo_id?: string;
     autoplay?: boolean;
     poster?: string;
+    poster_url?: string;
   } | null;
 
-  // Determine video source
+  // Build parsed video URL from stored IDs or raw URL
   let videoUrl = content?.video_url;
   let isEmbed = false;
 
   if (content?.youtube_id) {
-    videoUrl = `https://www.youtube.com/embed/${content.youtube_id}?autoplay=${content.autoplay ? 1 : 0}&rel=0`;
+    videoUrl = buildVideoEmbedUrl({ youtubeId: content.youtube_id }, { autoplay: content.autoplay });
     isEmbed = true;
   } else if (content?.vimeo_id) {
-    videoUrl = `https://player.vimeo.com/video/${content.vimeo_id}?autoplay=${content.autoplay ? 1 : 0}`;
+    videoUrl = buildVideoEmbedUrl({ vimeoId: content.vimeo_id }, { autoplay: content.autoplay });
     isEmbed = true;
+  } else if (videoUrl) {
+    const parsed = parseVideoUrl(videoUrl);
+    if (parsed.youtubeId || parsed.vimeoId) {
+      videoUrl = buildVideoEmbedUrl(parsed, { autoplay: content?.autoplay });
+      isEmbed = true;
+    }
   }
 
   if (!videoUrl) {
@@ -294,7 +327,7 @@ function VideoContent({ hotspot }: { hotspot: Hotspot }) {
         ) : (
           <VideoPlayer
             src={videoUrl}
-            poster={content?.poster}
+            poster={content?.poster_url || content?.poster}
             autoPlay={content?.autoplay}
           />
         )}
@@ -308,10 +341,13 @@ function LinkContent({ hotspot, onClose }: { hotspot: Hotspot; onClose: () => vo
     url?: string;
     target?: '_blank' | '_self';
     label?: string;
+    link_url?: string;
+    link_new_tab?: boolean;
   } | null;
 
-  const url = content?.url;
-  const target = content?.target || '_blank';
+  const url = content?.url || content?.link_url;
+  const target =
+    content?.target || (content?.link_new_tab === false ? '_self' : '_blank');
   const label = content?.label || url || 'Open link';
 
   const handleOpenLink = () => {
@@ -354,8 +390,11 @@ function LinkContent({ hotspot, onClose }: { hotspot: Hotspot; onClose: () => vo
 function CustomContent({ hotspot }: { hotspot: Hotspot }) {
   const content = hotspot.content as {
     html?: string;
+    custom_html?: string;
     component?: string;
   } | null;
+
+  const htmlContent = content?.html || content?.custom_html;
 
   return (
     <div className="space-y-4">
@@ -363,16 +402,37 @@ function CustomContent({ hotspot }: { hotspot: Hotspot }) {
         <p className="text-[var(--color-text-secondary)]">{hotspot.description}</p>
       )}
 
-      {content?.html ? (
-        <div
-          className="prose prose-sm max-w-none dark:prose-invert"
-          dangerouslySetInnerHTML={{ __html: content.html }}
-        />
+      {htmlContent ? (
+        <SandboxedHtml html={htmlContent} />
       ) : (
         <p className="text-[var(--color-text-muted)] italic">
           No custom content configured.
         </p>
       )}
     </div>
+  );
+}
+
+function SandboxedHtml({ html }: { html: string }) {
+  const srcDoc = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <base target="_blank" />
+    <style>
+      body { margin: 0; padding: 12px; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+      img { max-width: 100%; height: auto; }
+    </style>
+  </head>
+  <body>${html}</body>
+</html>`;
+
+  return (
+    <iframe
+      title="Hotspot content"
+      sandbox="allow-popups"
+      srcDoc={srcDoc}
+      className="h-80 w-full rounded-lg border border-[var(--color-border)] bg-white"
+    />
   );
 }

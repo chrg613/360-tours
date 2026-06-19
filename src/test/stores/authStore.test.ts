@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAuthStore } from '@/stores/authStore';
 import { authApi } from '@/api';
+import { supabaseAuth } from '@/lib/supabaseAuth';
 import type { User, AuthTokens } from '@/types';
 
 // Mock the API
@@ -10,12 +11,26 @@ vi.mock('@/api', () => ({
     register: vi.fn(),
     logout: vi.fn(),
     getCurrentUser: vi.fn(),
+    checkIdentifierStatus: vi.fn(),
+    recordLastMethod: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+vi.mock('@/lib/supabaseAuth', () => ({
+  supabaseAuth: {
+    getTokens: vi.fn(),
+    onAuthStateChange: vi.fn(() => ({ unsubscribe: vi.fn() })),
+    signInWithPassword: vi.fn(),
+    signInWithEmailPassword: vi.fn(),
+    verifyOtp: vi.fn(),
+    verifyEmailOtp: vi.fn(),
+    updatePassword: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
 // Helper to create a mock user
 const createMockUser = (overrides?: Partial<User>): User => ({
-  id: 1,
+  id: '1',
   supabase_user_id: 'supabase-user-id',
   email: 'test@example.com',
   phone: '+1234567890',
@@ -229,9 +244,7 @@ describe('authStore', () => {
     it('fetches and sets current user', async () => {
       const mockUser = createMockUser();
 
-      useAuthStore.setState({
-        tokens: createMockTokens(),
-      });
+      vi.mocked(supabaseAuth.getTokens).mockReturnValue(createMockTokens());
 
       vi.mocked(authApi.getCurrentUser).mockResolvedValue(mockUser);
 
@@ -243,16 +256,14 @@ describe('authStore', () => {
     });
 
     it('does nothing if no tokens', async () => {
+      vi.mocked(supabaseAuth.getTokens).mockReturnValue(null);
       await useAuthStore.getState().fetchCurrentUser();
 
       expect(authApi.getCurrentUser).not.toHaveBeenCalled();
     });
 
     it('clears auth on error', async () => {
-      useAuthStore.setState({
-        tokens: createMockTokens(),
-        isAuthenticated: true,
-      });
+      vi.mocked(supabaseAuth.getTokens).mockReturnValue(createMockTokens());
 
       vi.mocked(authApi.getCurrentUser).mockRejectedValue(new Error('Unauthorized'));
 
@@ -268,9 +279,7 @@ describe('authStore', () => {
     it('verifies authentication status', async () => {
       const mockUser = createMockUser();
 
-      useAuthStore.setState({
-        tokens: createMockTokens(),
-      });
+      vi.mocked(supabaseAuth.getTokens).mockReturnValue(createMockTokens());
 
       vi.mocked(authApi.getCurrentUser).mockResolvedValue(mockUser);
 
@@ -281,6 +290,7 @@ describe('authStore', () => {
     });
 
     it('sets loading to false if no tokens', async () => {
+      vi.mocked(supabaseAuth.getTokens).mockReturnValue(null);
       await useAuthStore.getState().checkAuth();
 
       expect(useAuthStore.getState().isLoading).toBe(false);

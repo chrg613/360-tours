@@ -16,9 +16,11 @@ Example environment hosts (illustrative):
 
 ## Authentication
 
+- **Provider**: Supabase Auth with phone-based OTP.
 - Authenticated endpoints require `Authorization: Bearer <access_token>`.
-- Access tokens SHOULD be short-lived (e.g., 15 minutes).
-- Refresh tokens SHOULD be long-lived and rotation-enabled.
+- Access tokens are Supabase-issued JWTs (short-lived, ~1 hour).
+- Refresh tokens are long-lived and rotation-enabled.
+- The frontend uses the Supabase client SDK for sign-up, sign-in, OTP, and token refresh; the backend validates the JWT on each request.
 
 ## Response conventions
 
@@ -34,70 +36,22 @@ Example environment hosts (illustrative):
 
 ## Authentication endpoints (MVP)
 
-### Register
+Authentication is handled via Supabase Auth SDK on the client. The backend does not expose custom auth endpoints — the frontend calls Supabase directly for register, login, OTP, and token refresh. The backend validates Supabase JWTs on protected routes.
 
-`POST /api/v1/auth/register`
+### Supabase Auth flows (client-side)
 
-Request:
-```json
-{
-  "phone": "+91XXXXXXXXXX",
-  "password": "string",
-  "name": "string"
-}
-```
+| Flow | Supabase SDK method |
+|------|---------------------|
+| Register | `supabase.auth.signUp({ phone, password, options: { data: { full_name, email } } })` |
+| Login | `supabase.auth.signInWithPassword({ phone, password })` |
+| Logout | `supabase.auth.signOut()` |
+| Request password reset OTP | `supabase.auth.signInWithOtp({ phone })` |
+| Verify OTP | `supabase.auth.verifyOtp({ phone, token, type: 'sms' })` |
+| Update password | `supabase.auth.updateUser({ password })` |
 
-Response (201):
-```json
-{
-  "access_token": "string",
-  "refresh_token": "string",
-  "user": { "id": "string", "name": "string", "phone": "+91XXXXXXXXXX" }
-}
-```
+After authentication, the frontend fetches the user profile from the backend:
 
-### Login
-
-`POST /api/v1/auth/login`
-
-Request:
-```json
-{ "phone": "+91XXXXXXXXXX", "password": "string" }
-```
-
-Response (200):
-```json
-{
-  "access_token": "string",
-  "refresh_token": "string",
-  "user": { "id": "string", "name": "string", "phone": "+91XXXXXXXXXX" }
-}
-```
-
-### Refresh
-
-`POST /api/v1/auth/refresh`
-
-Request:
-```json
-{ "refresh_token": "string" }
-```
-
-Response (200):
-```json
-{ "access_token": "string", "refresh_token": "string" }
-```
-
-### Logout
-
-`POST /api/v1/auth/logout`
-
-Request:
-```json
-{ "refresh_token": "string" }
-```
-
-Response (204): no body
+`GET /api/v1/users/me`
 
 ## User endpoints (MVP)
 
@@ -107,56 +61,157 @@ Response (204): no body
 
 Response (200):
 ```json
-{ "id": "string", "name": "string", "phone": "+91XXXXXXXXXX" }
+{
+  "id": "uuid-string",
+  "supabase_user_id": "string",
+  "email": "user@example.com",
+  "phone": "+91XXXXXXXXXX",
+  "full_name": "string",
+  "profile_image_url": "string",
+  "role": "user",
+  "is_active": true,
+  "is_verified": true,
+  "preferences": {},
+  "notification_settings": {},
+  "privacy_settings": {},
+  "created_at": "2026-01-07T12:34:56Z",
+  "updated_at": "2026-01-07T12:34:56Z"
+}
+```
+
+### Update current user
+
+`PATCH /api/v1/users/me`
+
+Request (example):
+```json
+{ "full_name": "New Name", "email": "new@example.com" }
+```
+
+Response (200): `User`
+
+### Upload profile image
+
+`POST /api/v1/users/me/profile-image`
+
+Request: `multipart/form-data` with `file` field.
+
+Response (200): the full updated `User` object (with the new `profile_image_url`), not `{url}`.
+
+> `POST /api/v1/users/me/avatar` is accepted as an alias for the same operation.
+
+### Account deletion
+
+There is no self-service account deletion endpoint. Account deletion is handled via support for now.
+
+## Dashboard (MVP)
+
+### Get dashboard stats
+
+`GET /api/v1/dashboard/stats`
+
+Response (200):
+```json
+{
+  "total_tours": 12,
+  "published_tours": 5,
+  "total_views": 1234,
+  "total_scenes": 48,
+  "storage_used": 536870912,
+  "storage_limit": 5368709120
+}
 ```
 
 ## Uploads (MVP)
 
-Uploads support a **presigned** flow (recommended) and MAY support a server-proxy flow.
+Uploads support a direct upload flow:
 
-### Presign an upload
+1. **Direct upload** (recommended): Client uploads via multipart form to the backend, which stores to Cloudinary.
 
-`POST /api/v1/uploads/presign`
+### Upload a file
+
+`POST /api/v1/upload`
 
 Request:
 ```json
 {
-  "purpose": "tour_scene" ,
-  "filename": "living-room.jpg",
-  "mime_type": "image/jpeg",
-  "byte_size": 12345678
+  "files": [
+    {
+      "filename": "living-room.jpg",
+      "content_type": "image/jpeg",
+      "file_size": 12345678,
+      "folder_type": "scenes",
+      "tour_id": "{tour_id}",
+      "visibility": "public"
+    }
+  ]
 }
 ```
 
 Response (200):
 ```json
 {
-  "upload_id": "string",
-  "upload_url": "https://...",
-  "method": "PUT",
-  "headers": { "Content-Type": "image/jpeg" },
-  "file": {
-    "id": "string",
-    "file_url": "https://cdn.../objects/...",
-    "mime_type": "image/jpeg",
-    "byte_size": 12345678
-  }
+  "items": [
+    {
+      "signed_url": "https://... (Supabase signed upload URL)",
+      "token": "string",
+      "path": "tours/{tour_id}/scenes/{scene_id}/original/{uuid}.jpg",
+      "public_url": "https://... (public object URL)",
+      "media": { "id": "string" }
+    }
+  ]
 }
 ```
 
-### Complete an upload
+The client uploads bytes via `PUT signed_url` with these headers:
+- `apikey: <SUPABASE_PUBLISHABLE_KEY>`
+- `Authorization: Bearer <access_token>`
+- `Content-Type: <file mime type>`
 
-`POST /api/v1/uploads/complete`
+### Direct upload (server-proxy)
 
-Request:
-```json
-{ "upload_id": "string" }
-```
+`POST /api/v1/upload`
+
+Request: `multipart/form-data` with `file`, optional `folder`, optional `visibility`.
 
 Response (200):
 ```json
-{ "file": { "id": "string", "file_url": "https://..." } }
+{
+  "file_path": "string",
+  "public_url": "string",
+  "file_type": "string",
+  "file_size": 12345678,
+  "content_type": "image/jpeg",
+  "original_filename": "living-room.jpg"
+}
 ```
+
+### Batch upload (server-proxy)
+
+`POST /api/v1/upload/batch`
+
+Request: `multipart/form-data` with multiple `files`, optional `folder`, optional `visibility`.
+
+Response (200):
+```json
+{ "items": [{ "file_path": "...", "public_url": "...", ... }] }
+```
+
+### List media files
+
+`GET /api/v1/upload/media?page=1&page_size=20&folder=...&mime_type=...`
+
+Response (200): pagination envelope of `MediaFile`.
+
+### Get a media file
+
+`GET /api/v1/upload/media/{media_id}`
+
+Response (200): `MediaFile`
+
+### Delete a media file
+
+`DELETE /api/v1/upload/media/{media_id}` → Response (204)
 
 ## Tours (MVP)
 
@@ -164,7 +219,7 @@ Tour schema is defined in `../00-conventions.md`.
 
 ### List tours
 
-`GET /api/v1/tours?page=1&page_size=20&status=draft|published|archived&visibility=private|unlisted|public&query=...`
+`GET /api/v1/tours?page=1&page_size=20&status=draft|published|archived&search=...`
 
 Response (200): pagination envelope of `Tour`.
 
@@ -187,7 +242,7 @@ Response (201): `Tour`
 
 `GET /api/v1/tours/{tour_id}`
 
-Response (200): `Tour`
+Response (200): `Tour` (includes `scenes` array)
 
 ### Update tour
 
@@ -199,6 +254,8 @@ Request (example):
 ```
 
 Response (200): `Tour`
+
+> `PUT /api/v1/tours/{tour_id}` is also accepted as a legacy alias.
 
 ### Delete tour
 
@@ -215,7 +272,7 @@ Response (204): no body
 
 `POST /api/v1/tours/{tour_id}/duplicate`
 
-Response (201): `Tour` (new tour)
+Response (201): `Tour` (new tour in `draft` status with copied scenes and hotspots)
 
 ## Scenes (MVP)
 
@@ -223,9 +280,9 @@ Scene schema is defined in `../00-conventions.md`.
 
 ### List scenes for a tour
 
-`GET /api/v1/tours/{tour_id}/scenes?page=1&page_size=100`
+`GET /api/v1/tours/{tour_id}/scenes`
 
-Response (200): pagination envelope of `Scene`.
+Response (200): array of `Scene` (ordered by `order_index`).
 
 ### Create a scene
 
@@ -235,12 +292,19 @@ Request:
 ```json
 {
   "title": "Living Room",
-  "image_file_id": "string",
+  "image_url": "https://... (uploaded image URL)",
+  "thumbnail_url": "https://... (optional)",
   "order_index": 0
 }
 ```
 
 Response (201): `Scene`
+
+### Get a scene
+
+`GET /api/v1/scenes/{scene_id}`
+
+Response (200): `Scene`
 
 ### Update scene
 
@@ -252,6 +316,8 @@ Request (example):
 ```
 
 Response (200): `Scene`
+
+> `PUT /api/v1/scenes/{scene_id}` is also accepted as a legacy alias.
 
 ### Delete scene
 
@@ -266,7 +332,9 @@ Request:
 { "scene_ids": ["scene1", "scene2", "scene3"] }
 ```
 
-Response (204)
+Response (200): array of `Scene` (updated order)
+
+> `PUT /api/v1/tours/{tour_id}/scenes/reorder` is also accepted as a legacy alias.
 
 ## Hotspots (MVP)
 
@@ -276,10 +344,7 @@ Hotspot schema (including typed content) is defined in `../00-conventions.md`.
 
 `GET /api/v1/scenes/{scene_id}/hotspots`
 
-Response (200):
-```json
-{ "items": [], "total": 0, "page": 1, "page_size": 100, "total_pages": 1 }
-```
+Response (200): array of `Hotspot`.
 
 ### Create hotspot
 
@@ -325,10 +390,7 @@ Floor plan schema is defined in `../00-conventions.md`.
 
 `GET /api/v1/tours/{tour_id}/floor-plans`
 
-Response (200):
-```json
-{ "items": [], "total": 0, "page": 1, "page_size": 50, "total_pages": 1 }
-```
+Response (200): array of `FloorPlan`.
 
 ### Create floor plan
 
@@ -336,10 +398,26 @@ Response (200):
 
 Request:
 ```json
-{ "name": "Ground", "floor_number": 0, "image_file_id": "string" }
+{
+  "name": "Ground Floor",
+  "floor_number": 1,
+  "image_url": "https://... (uploaded image URL)",
+  "markers": [{ "scene_id": "string", "x": 50, "y": 20, "label": "Lobby" }]
+}
 ```
 
 Response (201): `FloorPlan`
+
+### Update floor plan
+
+`PUT /api/v1/tours/{tour_id}/floor-plans/{floor_plan_id}`
+
+Request:
+```json
+{ "name": "Updated Name", "markers": [...] }
+```
+
+Response (200): `FloorPlan`
 
 ### Replace markers (bulk)
 
@@ -347,7 +425,7 @@ Response (201): `FloorPlan`
 
 Request:
 ```json
-{ "markers": [{ "scene_id": "string", "x": 50, "y": 20 }] }
+[{ "scene_id": "string", "x": 50, "y": 20 }]
 ```
 
 Response (200): `FloorPlan`
@@ -360,19 +438,47 @@ Response (200): `FloorPlan`
 
 ### Get public tour
 
-`GET /api/v1/public/tours/{tour_id}`
+`GET /api/v1/public/tours/{tour_id}?track=true`
 
 Response (200):
 ```json
 {
-  "tour": {},
-  "scenes": [],
-  "hotspots": [],
-  "floor_plans": []
+  "id": "string",
+  "title": "string",
+  "settings": { "floor_plans": [] },
+  "scenes": []
 }
 ```
 
 The payload MUST only include data for `visibility=public|unlisted` tours.
+
+### Get public tour scenes
+
+`GET /api/v1/public/tours/{tour_id}/scenes`
+
+Response (200): array of `Scene`.
+
+### Like a tour
+
+`POST /api/v1/public/tours/{tour_id}/like`
+
+Headers (optional): `x-session-id: <session_id>` for anonymous session tracking.
+
+Response (200):
+```json
+{ "like_count": 42 }
+```
+
+### Unlike a tour
+
+`DELETE /api/v1/public/tours/{tour_id}/like`
+
+Headers (optional): `x-session-id: <session_id>`
+
+Response (200):
+```json
+{ "like_count": 41 }
+```
 
 ## Analytics (MVP)
 
@@ -380,37 +486,43 @@ Analytics event naming is defined in `../00-conventions.md`.
 
 ### Ingest an analytics event
 
-`POST /api/v1/public/events`
+`POST /api/v1/public/tours/{tour_id}/events`
 
 Request:
 ```json
 {
-  "tour_id": "string",
-  "session_id": "string",
   "event_type": "scene_view",
+  "session_id": "string",
   "scene_id": "string",
-  "occurred_at": "2026-01-07T12:34:56Z",
-  "referrer": "https://example.com"
+  "hotspot_id": "string",
+  "event_data": { "referrer": "https://example.com" }
 }
 ```
 
-Response (204)
+Response (200): `{ "status": "ok" }`
 
 ### Tour analytics summary
 
-`GET /api/v1/tours/{tour_id}/analytics/summary?from=2026-01-01&to=2026-01-07`
+`GET /api/v1/tours/{tour_id}/analytics?start_date=2026-01-01&end_date=2026-01-07`
 
 Response (200):
 ```json
 {
-  "views": 123,
-  "unique_sessions": 100,
-  "top_scenes": [{ "scene_id": "string", "views": 50 }],
-  "top_hotspots": [{ "hotspot_id": "string", "clicks": 20 }]
+  "tour_id": "string",
+  "total_views": 123,
+  "unique_views": 100,
+  "total_likes": 50,
+  "total_shares": 20,
+  "avg_session_duration": 120,
+  "scene_views": { "scene_id": 45 },
+  "hotspot_clicks": { "hotspot_id": 12 },
+  "device_breakdown": { "desktop": 60, "mobile": 35, "tablet": 5, "vr": 0 },
+  "country_breakdown": { "IN": 80, "US": 20 },
+  "daily_views": [{ "date": "2026-01-01", "views": 20 }]
 }
 ```
 
-## AI jobs (Post‑MVP by default)
+## AI jobs
 
 AI job schema is defined in `../00-conventions.md`.
 
@@ -438,6 +550,123 @@ Response (200): pagination envelope of `AIJob`.
 ### Cancel job
 
 `POST /api/v1/ai/jobs/{job_id}/cancel` → Response (204)
+
+### Generate tour (multipart)
+
+`POST /api/v1/ai/tours/generate`
+
+Request: `multipart/form-data` with image files and tour metadata.
+
+Response (201): `AIJob`
+
+### Apply scene analysis
+
+`POST /api/v1/ai/jobs/{job_id}/apply-scenes`
+
+Response (200): updated `Scene[]`
+
+### Apply hotspot suggestions
+
+`POST /api/v1/ai/jobs/{job_id}/apply-hotspots`
+
+Response (200): updated `Hotspot[]`
+
+### Generate 360 reel
+
+`POST /api/v1/ai/tours/{tour_id}/reel`
+
+Renders the tour's panoramas into a vertical 9:16 "tiny planet" reel video (see `../features/reel-generation.md`).
+
+Request (all fields optional):
+```json
+{
+  "scene_ids": ["scene1", "scene2"],
+  "scene_duration": 3,
+  "transition_duration": 0.5,
+  "rotation_degrees": 120
+}
+```
+
+- `scene_ids`: ordered list of the tour's scene ids to include; defaults to all scenes in `order_index` order.
+- `scene_duration`: seconds per scene, `2`–`6` (default `3`).
+- `transition_duration`: crossfade seconds between scenes, `0`–`1` (default `0.5`).
+- `rotation_degrees`: yaw rotation per scene, `0`–`360` (default `120`).
+
+Response (200): standard `AIJobResponse` (`{ "job": AIJob }`) with `job_type: "generate_reel"`.
+
+Track progress via the existing `GET /api/v1/ai/jobs/{job_id}` and the WebSocket `/ws/jobs/{job_id}?token=...`.
+
+Completed job `result`:
+```json
+{
+  "tour_id": "string",
+  "video_url": "https://.../tours/{tour_id}/reels/{job_id}.mp4",
+  "thumbnail_url": "https://.../tours/{tour_id}/reels/{job_id}.jpg",
+  "duration_seconds": 24.5,
+  "scene_count": 8,
+  "width": 1080,
+  "height": 1920
+}
+```
+
+Limits: at most 10 scenes per reel and ~60 seconds total (`scene_duration * scene_count`); scenes beyond either cap are silently dropped rather than rejected.
+
+Errors:
+- `400` — the tour has no scenes, or `scene_ids` references scenes not in the tour
+- `403` — the tour is not owned by the caller
+- `404` — tour not found
+- `422` — option values outside the allowed ranges
+- `503` — video rendering unavailable (`ffmpeg` is not installed on the server)
+
+## WebSocket endpoints
+
+WebSocket endpoints are mounted at the server root (no `/api/v1` prefix). Authentication is via token query parameter.
+
+### Job progress
+
+`ws(s)://<host>/ws/jobs/{job_id}?token=<access_token>`
+
+Messages (JSON):
+```json
+{
+  "type": "job_update | connected | heartbeat | error",
+  "job_id": "string",
+  "data": {
+    "status": "processing | completed | failed",
+    "progress": 50,
+    "result": {},
+    "error_message": "string"
+  }
+}
+```
+
+The client sends `ping` every 25 seconds; the server responds with `pong`.
+
+### User notifications
+
+`ws(s)://<host>/ws/user?token=<access_token>`
+
+Messages (JSON):
+```json
+{
+  "type": "notification",
+  "data": { ... }
+}
+```
+
+### Tour collaboration (scaffolded)
+
+`ws(s)://<host>/ws/tours/{tour_id}?token=<access_token>`
+
+Reserved for future real-time collaboration features.
+
+## Social share previews
+
+The backend provides server-rendered HTML for link unfurling:
+
+`GET /share/tours/{tour_id}?redirect=<viewer_url>`
+
+Renders Open Graph + Twitter Card meta tags, then redirects human visitors to the viewer.
 
 ## Error codes (canonical)
 

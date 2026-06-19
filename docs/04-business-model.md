@@ -50,19 +50,19 @@ Every 360 Ghar user has access to:
 **Branding & Customization**:
 - Custom logo support
 - Brand colors
-- Custom domain with SSL
-- White-label options
+- Custom domain with SSL (coming soon)
+- White-label options (coming soon)
 
 **Sharing & Analytics**:
 - Direct links and embed codes
 - Privacy controls and password protection
-- Google Analytics integration
+- Google Analytics integration (coming soon)
 - Custom analytics dashboards
 
 **Integrations**:
 - Real estate platform integrations
 - Social media sharing
-- Street View export
+- Street View export (coming soon)
 - Team collaboration tools
 - API access
 

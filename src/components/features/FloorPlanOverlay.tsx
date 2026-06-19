@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import { Map, ChevronUp, ChevronDown, X, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui';
@@ -26,34 +26,51 @@ export function FloorPlanOverlay({
 }: FloorPlanOverlayProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [currentFloorIndex, setCurrentFloorIndex] = useState(0);
+  const [manualFloorSelection, setManualFloorSelection] = useState<{
+    index: number;
+    sceneId: string;
+  } | null>(null);
 
   // Sort floor plans by floor number
-  const sortedFloorPlans = [...floorPlans].sort((a, b) => a.floor_number - b.floor_number);
-  const currentFloorPlan = sortedFloorPlans[currentFloorIndex];
+  const sortedFloorPlans = useMemo(
+    () => [...floorPlans].sort((a, b) => a.floor_number - b.floor_number),
+    [floorPlans]
+  );
 
-  // Find which floor the current scene is on
-  const findSceneFloor = useCallback(() => {
-    for (let i = 0; i < sortedFloorPlans.length; i++) {
-      const floorPlan = sortedFloorPlans[i];
-      if (floorPlan.markers.some((m) => m.scene_id === currentSceneId)) {
-        return i;
-      }
-    }
-    return 0;
+  const sceneFloorIndex = useMemo(() => {
+    const index = sortedFloorPlans.findIndex((floorPlan) =>
+      floorPlan.markers.some((marker) => marker.scene_id === currentSceneId)
+    );
+    return index >= 0 ? index : 0;
   }, [sortedFloorPlans, currentSceneId]);
 
-  // Auto-switch floor when scene changes
-  const sceneFloorIndex = findSceneFloor();
-  if (sceneFloorIndex !== currentFloorIndex && sortedFloorPlans[sceneFloorIndex]) {
-    setCurrentFloorIndex(sceneFloorIndex);
-  }
+  const displayedFloorIndex = useMemo(() => {
+    if (!sortedFloorPlans.length) return 0;
+
+    if (manualFloorSelection && manualFloorSelection.sceneId === currentSceneId) {
+      return Math.min(
+        Math.max(manualFloorSelection.index, 0),
+        sortedFloorPlans.length - 1
+      );
+    }
+
+    return sceneFloorIndex;
+  }, [sortedFloorPlans.length, manualFloorSelection, currentSceneId, sceneFloorIndex]);
+
+  const currentFloorPlan = sortedFloorPlans[displayedFloorIndex];
 
   const handleFloorChange = (direction: 'up' | 'down') => {
-    if (direction === 'up' && currentFloorIndex < sortedFloorPlans.length - 1) {
-      setCurrentFloorIndex(currentFloorIndex + 1);
-    } else if (direction === 'down' && currentFloorIndex > 0) {
-      setCurrentFloorIndex(currentFloorIndex - 1);
+    const maxIndex = sortedFloorPlans.length - 1;
+    if (direction === 'up' && displayedFloorIndex < maxIndex) {
+      setManualFloorSelection({
+        index: displayedFloorIndex + 1,
+        sceneId: currentSceneId,
+      });
+    } else if (direction === 'down' && displayedFloorIndex > 0) {
+      setManualFloorSelection({
+        index: displayedFloorIndex - 1,
+        sceneId: currentSceneId,
+      });
     }
   };
 
@@ -195,7 +212,7 @@ export function FloorPlanOverlay({
               variant="ghost"
               size="icon-sm"
               onClick={() => handleFloorChange('down')}
-              disabled={currentFloorIndex === 0}
+              disabled={displayedFloorIndex === 0}
             >
               <ChevronDown className="h-4 w-4" />
             </Button>
@@ -203,7 +220,7 @@ export function FloorPlanOverlay({
               Floor {currentFloorPlan.floor_number}
               {sortedFloorPlans.length > 1 && (
                 <span className="ml-1">
-                  ({currentFloorIndex + 1}/{sortedFloorPlans.length})
+                  ({displayedFloorIndex + 1}/{sortedFloorPlans.length})
                 </span>
               )}
             </span>
@@ -211,7 +228,7 @@ export function FloorPlanOverlay({
               variant="ghost"
               size="icon-sm"
               onClick={() => handleFloorChange('up')}
-              disabled={currentFloorIndex === sortedFloorPlans.length - 1}
+              disabled={displayedFloorIndex === sortedFloorPlans.length - 1}
             >
               <ChevronUp className="h-4 w-4" />
             </Button>

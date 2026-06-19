@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 
 interface WindowSize {
   width: number;
@@ -29,24 +29,17 @@ export function useWindowSize(): WindowSize {
 }
 
 export function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.matchMedia(query).matches;
-    }
-    return false;
-  });
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia(query);
-    const handler = (event: MediaQueryListEvent) => setMatches(event.matches);
-
-    setMatches(mediaQuery.matches);
-    mediaQuery.addEventListener('change', handler);
-
-    return () => mediaQuery.removeEventListener('change', handler);
-  }, [query]);
-
-  return matches;
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      if (typeof window === 'undefined') return () => undefined;
+      const mediaQuery = window.matchMedia(query);
+      const handler = () => onStoreChange();
+      mediaQuery.addEventListener('change', handler);
+      return () => mediaQuery.removeEventListener('change', handler);
+    },
+    () => (typeof window !== 'undefined' ? window.matchMedia(query).matches : false),
+    () => false
+  );
 }
 
 export function useIsMobile(): boolean {

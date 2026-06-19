@@ -1,6 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { ROUTES } from '@/constants';
-import { cn } from '@/utils';
 
 export function AuthLayout() {
   const location = useLocation();

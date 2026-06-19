@@ -13,7 +13,7 @@ export function HeroSection() {
   return (
     <section
       ref={sectionRef}
-      className="relative min-h-screen flex items-center overflow-hidden bg-[var(--landing-bg)] pt-24"
+      className="relative min-h-screen flex items-center overflow-hidden bg-[var(--landing-bg)] pt-16 md:pt-20 lg:pt-24"
     >
       {/* Background decorative elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -24,7 +24,7 @@ export function HeroSection() {
         <div className="absolute bottom-1/3 left-1/4 w-1 h-1 bg-[var(--landing-accent)] rounded-full opacity-50" />
       </div>
 
-      <div className="relative w-full max-w-[1400px] mx-auto px-6 md:px-12 lg:px-16 py-24 lg:py-0">
+      <div className="relative w-full max-w-[1400px] mx-auto px-6 md:px-12 lg:px-16 py-8 md:py-12 lg:py-0">
         <div className="grid lg:grid-cols-[1.1fr,1fr] gap-12 lg:gap-16 items-center">
           {/* Left column - Content */}
           <div className="relative z-10">

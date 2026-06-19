@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowRight,
@@ -30,12 +30,14 @@ import {
   SelectItem,
   SelectValue,
 } from '@/components/ui';
-import { HotspotIconPicker, getIconByName, type HotspotIconConfig } from './HotspotIconPicker';
+import { HotspotIconPicker, type HotspotIconConfig } from './HotspotIconPicker';
+import { HOTSPOT_ICON_BY_NAME } from './hotspotIcons';
 import { toursApi } from '@/api';
 import { QUERY_KEYS } from '@/constants';
 import { useToast } from '@/hooks/useToast';
 import { cn } from '@/utils';
-import type { Hotspot, HotspotType, Scene } from '@/types';
+import { parseVideoUrl } from '@/utils/videoUrl';
+import type { Hotspot, HotspotType, HotspotUpdateInput, Scene } from '@/types';
 
 interface HotspotEditorModalProps {
   open: boolean;
@@ -46,6 +48,10 @@ interface HotspotEditorModalProps {
   mode: 'create' | 'edit';
   initialPosition?: { yaw: number; pitch: number };
 }
+
+type HotspotEditorModalFormProps = Omit<HotspotEditorModalProps, 'open'> & {
+  initialPosition: { yaw: number; pitch: number };
+};
 
 const HOTSPOT_TYPE_INFO = {
   navigation: {
@@ -80,6 +86,25 @@ const HOTSPOT_TYPE_INFO = {
   },
 };
 
+const TYPE_ICON_NAME: Record<HotspotType, string> = {
+  navigation: 'arrow-right',
+  info: 'info',
+  audio: 'volume-2',
+  video: 'play',
+  link: 'link',
+  custom: 'code',
+};
+
+function getDefaultIconConfig(type: HotspotType): HotspotIconConfig {
+  return {
+    iconName: TYPE_ICON_NAME[type] ?? 'info',
+    iconColor: '#FF5733',
+    iconSize: 32,
+  };
+}
+
+// parseVideoUrl imported from shared utility — see @/utils/videoUrl
+
 export function HotspotEditorModal({
   open,
   onOpenChange,
@@ -89,82 +114,109 @@ export function HotspotEditorModal({
   mode,
   initialPosition = { yaw: 0, pitch: 0 },
 }: HotspotEditorModalProps) {
+  if (!open) return null;
+
+  const positionKey = `${initialPosition.yaw}:${initialPosition.pitch}`;
+  const dialogKey =
+    mode === 'edit'
+      ? `edit:${hotspot?.id ?? 'unknown'}`
+      : `create:${sceneId}:${positionKey}`;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <HotspotEditorModalForm
+        key={dialogKey}
+        onOpenChange={onOpenChange}
+        hotspot={hotspot}
+        sceneId={sceneId}
+        scenes={scenes}
+        mode={mode}
+        initialPosition={initialPosition}
+      />
+    </Dialog>
+  );
+}
+
+function HotspotEditorModalForm({
+  onOpenChange,
+  hotspot,
+  sceneId,
+  scenes,
+  mode,
+  initialPosition,
+}: HotspotEditorModalFormProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const isEdit = mode === 'edit' && Boolean(hotspot);
+  const initialType: HotspotType = isEdit && hotspot ? hotspot.type : 'navigation';
+
   // Form state
-  const [type, setType] = useState<HotspotType>('navigation');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [targetSceneId, setTargetSceneId] = useState('');
-  const [position, setPosition] = useState(initialPosition);
-  const [iconConfig, setIconConfig] = useState<HotspotIconConfig>({
-    iconName: 'arrow-right',
-    iconColor: '#FF5733',
-    iconSize: 32,
+  const [type, setType] = useState<HotspotType>(initialType);
+  const [title, setTitle] = useState(isEdit && hotspot ? hotspot.title || '' : '');
+  const [description, setDescription] = useState(() => {
+    if (!isEdit || !hotspot) return '';
+    if (hotspot.type === 'info') {
+      const contentText =
+        hotspot.content && typeof hotspot.content.text === 'string'
+          ? hotspot.content.text
+          : '';
+      return contentText || hotspot.description || '';
+    }
+    return hotspot.description || '';
+  });
+  const [targetSceneId, setTargetSceneId] = useState(
+    isEdit && hotspot ? hotspot.target_scene_id || '' : ''
+  );
+  const [position, setPosition] = useState(isEdit && hotspot ? hotspot.position : initialPosition);
+  const [iconConfig, setIconConfig] = useState<HotspotIconConfig>(() => {
+    if (isEdit && hotspot) {
+      return {
+        iconName: hotspot.icon_name || TYPE_ICON_NAME[hotspot.type] || 'info',
+        iconColor: hotspot.icon_color || '#FF5733',
+        iconSize: hotspot.icon_size || 32,
+      };
+    }
+    return getDefaultIconConfig(initialType);
   });
 
   // Content-specific state
-  const [audioUrl, setAudioUrl] = useState('');
-  const [videoUrl, setVideoUrl] = useState('');
-  const [linkUrl, setLinkUrl] = useState('');
-  const [linkNewTab, setLinkNewTab] = useState(true);
-  const [customHtml, setCustomHtml] = useState('');
+  const [audioUrl, setAudioUrl] = useState(
+    isEdit && hotspot ? ((hotspot.content?.audio_url as string) || '') : ''
+  );
+  const [videoUrl, setVideoUrl] = useState(
+    () => {
+      if (!isEdit || !hotspot) return '';
 
-  // Reset form when modal opens/closes or hotspot changes
-  useEffect(() => {
-    if (open && hotspot && mode === 'edit') {
-      setType(hotspot.type);
-      setTitle(hotspot.title || '');
-      setDescription(hotspot.description || '');
-      setTargetSceneId(hotspot.target_scene_id || '');
-      setPosition(hotspot.position);
-      setIconConfig({
-        iconName: hotspot.icon_name || 'arrow-right',
-        iconColor: hotspot.icon_color || '#FF5733',
-        iconSize: hotspot.icon_size || 32,
-      });
-      setAudioUrl((hotspot.content?.audio_url as string) || '');
-      setVideoUrl((hotspot.content?.video_url as string) || '');
-      setLinkUrl((hotspot.content?.link_url as string) || '');
-      setLinkNewTab(hotspot.content?.link_new_tab !== false);
-      setCustomHtml((hotspot.content?.custom_html as string) || '');
-    } else if (open && mode === 'create') {
-      setType('navigation');
-      setTitle('');
-      setDescription('');
-      setTargetSceneId('');
-      setPosition(initialPosition);
-      setIconConfig({
-        iconName: 'arrow-right',
-        iconColor: '#FF5733',
-        iconSize: 32,
-      });
-      setAudioUrl('');
-      setVideoUrl('');
-      setLinkUrl('');
-      setLinkNewTab(true);
-      setCustomHtml('');
-    }
-  }, [open, hotspot, mode, initialPosition]);
+      const content = hotspot.content as
+        | {
+            video_url?: string;
+            youtube_id?: string;
+            vimeo_id?: string;
+          }
+        | null;
 
-  // Update icon based on type
-  useEffect(() => {
-    const typeIcons: Record<HotspotType, string> = {
-      navigation: 'arrow-right',
-      info: 'info',
-      audio: 'volume-2',
-      video: 'play',
-      link: 'link',
-      custom: 'code',
-    };
-    if (!hotspot) {
-      setIconConfig((prev) => ({
-        ...prev,
-        iconName: typeIcons[type] || 'info',
-      }));
+      if (content?.video_url) return content.video_url;
+      if (content?.youtube_id) return `https://www.youtube.com/watch?v=${content.youtube_id}`;
+      if (content?.vimeo_id) return `https://vimeo.com/${content.vimeo_id}`;
+      return '';
     }
-  }, [type, hotspot]);
+  );
+  const [linkUrl, setLinkUrl] = useState(
+    isEdit && hotspot
+      ? ((hotspot.content?.url as string) || (hotspot.content?.link_url as string) || '')
+      : ''
+  );
+  const [linkNewTab, setLinkNewTab] = useState(() => {
+    if (!isEdit || !hotspot) return true;
+    if (hotspot.content?.target) return hotspot.content.target === '_blank';
+    return hotspot.content?.link_new_tab !== false;
+  });
+  const [customHtml, setCustomHtml] = useState(
+    isEdit && hotspot
+      ? ((hotspot.content?.html as string) || (hotspot.content?.custom_html as string) || '')
+      : ''
+  );
 
   // Create mutation
   const createMutation = useMutation({
@@ -182,7 +234,7 @@ export function HotspotEditorModal({
 
   // Update mutation
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Hotspot> }) =>
+    mutationFn: ({ id, data }: { id: string; data: HotspotUpdateInput }) =>
       toursApi.updateHotspot(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.SCENES] });
@@ -194,18 +246,49 @@ export function HotspotEditorModal({
     },
   });
 
+  const handleTypeChange = (nextType: HotspotType) => {
+    setType(nextType);
+    if (mode === 'create') {
+      setIconConfig((prev) => ({
+        ...prev,
+        iconName: TYPE_ICON_NAME[nextType] ?? prev.iconName,
+      }));
+    }
+  };
+
   const handleSubmit = () => {
     // Build content object based on type
     const content: Record<string, unknown> = {};
-    if (type === 'audio' && audioUrl) content.audio_url = audioUrl;
-    if (type === 'video' && videoUrl) content.video_url = videoUrl;
-    if (type === 'link' && linkUrl) {
-      content.link_url = linkUrl;
-      content.link_new_tab = linkNewTab;
+    if (type === 'info' && description) {
+      content.kind = 'info';
+      content.text = description;
     }
-    if (type === 'custom' && customHtml) content.custom_html = customHtml;
+    if (type === 'audio' && audioUrl) {
+      content.kind = 'audio';
+      content.audio_url = audioUrl;
+    }
+    if (type === 'video' && videoUrl) {
+      content.kind = 'video';
+      const parsed = parseVideoUrl(videoUrl);
+      if (parsed.youtubeId) {
+        content.youtube_id = parsed.youtubeId;
+      } else if (parsed.vimeoId) {
+        content.vimeo_id = parsed.vimeoId;
+      } else {
+        content.video_url = parsed.url || videoUrl;
+      }
+    }
+    if (type === 'link' && linkUrl) {
+      content.kind = 'link';
+      content.url = linkUrl;
+      content.target = linkNewTab ? '_blank' : '_self';
+    }
+    if (type === 'custom' && customHtml) {
+      content.kind = 'custom';
+      content.html = customHtml;
+    }
 
-    const data = {
+    const data: HotspotUpdateInput = {
       type,
       position,
       title: title || undefined,
@@ -225,11 +308,14 @@ export function HotspotEditorModal({
   };
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
-  const CurrentIcon = getIconByName(iconConfig.iconName);
+  const CurrentIcon = HOTSPOT_ICON_BY_NAME[iconConfig.iconName] ?? Info;
+
+  // Validation: navigation hotspots require a target scene
+  const isNavigationMissingTarget = type === 'navigation' && !targetSceneId;
+  const canSave = !isNavigationMissingTarget;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+    <DialogContent className="max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>
             {mode === 'create' ? 'Add Hotspot' : 'Edit Hotspot'}
@@ -251,7 +337,7 @@ export function HotspotEditorModal({
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setType(key)}
+                    onClick={() => handleTypeChange(key)}
                     className={cn(
                       'flex flex-col items-center gap-1 rounded-lg border p-3 transition-colors',
                       type === key
@@ -498,11 +584,10 @@ export function HotspotEditorModal({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} isLoading={isLoading}>
+          <Button onClick={handleSubmit} isLoading={isLoading} disabled={!canSave}>
             {mode === 'create' ? 'Add Hotspot' : 'Save Changes'}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </DialogContent>
   );
 }

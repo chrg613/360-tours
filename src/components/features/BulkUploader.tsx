@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Upload,
   X,
@@ -49,12 +49,35 @@ export function BulkUploader({ tourId, open, onOpenChange }: BulkUploaderProps) 
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
 
+  // Mirror files state in a ref so unmount cleanup can revoke outstanding preview URLs
+  const filesRef = useRef<UploadFile[]>([]);
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+
+  // Revoke any remaining preview object URLs on unmount
+  useEffect(
+    () => () => {
+      filesRef.current.forEach((f) => {
+        if (f.previewUrl) {
+          URL.revokeObjectURL(f.previewUrl);
+        }
+      });
+    },
+    []
+  );
+
   // Calculate overall progress
   const totalFiles = files.length;
-  const completedFiles = files.filter(
-    (f) => f.status === 'success' || f.status === 'error'
-  ).length;
-  const overallProgress = totalFiles > 0 ? (completedFiles / totalFiles) * 100 : 0;
+  const completedFiles = files.filter((f) => f.status === 'success' || f.status === 'error').length;
+
+  const totalBytes = files.reduce((sum, f) => sum + f.file.size, 0);
+  const uploadedBytes = files.reduce((sum, f) => {
+    if (f.status === 'success' || f.status === 'error') return sum + f.file.size;
+    if (f.status === 'uploading') return sum + Math.round((f.progress / 100) * f.file.size);
+    return sum;
+  }, 0);
+  const overallProgress = totalBytes > 0 ? (uploadedBytes / totalBytes) * 100 : 0;
 
   // Add files to the queue
   const addFiles = useCallback((newFiles: FileList | File[]) => {
@@ -129,57 +152,57 @@ export function BulkUploader({ tourId, open, onOpenChange }: BulkUploaderProps) 
 
     setIsUploading(true);
 
-    for (const uploadFile of pendingFiles) {
-      // Update status to uploading
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.id === uploadFile.id ? { ...f, status: 'uploading', progress: 0 } : f
-        )
-      );
+    // Mark all pending files as uploading immediately (parallel uploads)
+    setFiles((prev) =>
+      prev.map((f) => (f.status === 'pending' ? { ...f, status: 'uploading', progress: 0 } : f))
+    );
 
-      try {
-        // Upload file
-        const result = await uploadApi.uploadFile(uploadFile.file, {
-          folder: 'scenes',
-          visibility: 'public',
-        });
+    const results = await Promise.allSettled(
+      pendingFiles.map(async (uploadFile) => {
+        try {
+          const uploadResult = await uploadApi.uploadFile(uploadFile.file, {
+            folder: 'scenes',
+            visibility: 'public',
+            onProgress: (progress) => {
+              setFiles((prev) =>
+                prev.map((f) => (f.id === uploadFile.id ? { ...f, progress } : f))
+              );
+            },
+          });
 
-        // Create scene - Backend returns public_url, not url; thumbnail is generated later
-        await toursApi.createScene(tourId, {
-          image_url: result.public_url,
-          title: uploadFile.file.name.replace(/\.[^/.]+$/, ''),
-        });
+          await toursApi.createScene(tourId, {
+            image_url: uploadResult.public_url,
+            title: uploadFile.file.name.replace(/\.[^/.]+$/, ''),
+          });
 
-        // Update status to success
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.id === uploadFile.id ? { ...f, status: 'success', progress: 100 } : f
-          )
-        );
-      } catch (error) {
-        // Update status to error
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.id === uploadFile.id
-              ? {
-                  ...f,
-                  status: 'error',
-                  progress: 0,
-                  error: error instanceof Error ? error.message : 'Upload failed',
-                }
-              : f
-          )
-        );
-      }
-    }
+          setFiles((prev) =>
+            prev.map((f) => (f.id === uploadFile.id ? { ...f, status: 'success', progress: 100 } : f))
+          );
+        } catch (err) {
+          setFiles((prev) =>
+            prev.map((f) =>
+              f.id === uploadFile.id
+                ? {
+                    ...f,
+                    status: 'error',
+                    progress: 0,
+                    error: err instanceof Error ? err.message : 'Upload failed',
+                  }
+                : f
+            )
+          );
+          throw err;
+        }
+      })
+    );
 
     setIsUploading(false);
 
     // Refresh scenes
     queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.SCENES, tourId] });
 
-    const successCount = files.filter((f) => f.status === 'success').length;
-    const errorCount = files.filter((f) => f.status === 'error').length;
+    const successCount = results.filter((r) => r.status === 'fulfilled').length;
+    const errorCount = results.filter((r) => r.status === 'rejected').length;
 
     if (successCount > 0) {
       toast(

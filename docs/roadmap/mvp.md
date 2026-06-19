@@ -1,72 +1,94 @@
 # MVP Specification
 
-This document defines the Minimum Viable Product (MVP) for the 360 Tours Platform.
+This MVP definition is intentionally narrowed to execution quality on core journeys.
 
-The MVP is the smallest set of features that delivers production-grade tour creation and public viewing with secure access control.
+## MVP Scope (Current)
 
-## MVP scope
+### 1) Authentication
+- Phone-based registration and login via Supabase Auth.
+- OTP-based password reset.
+- Session handling with JWT access/refresh tokens.
 
-### 1) Authentication (MVP)
+### 2) Tour Authoring
+- Create/edit/delete tours.
+- Upload and manage scenes (single and bulk upload).
+- Create/edit/delete hotspots (all 6 types: navigation, info, audio, video, link, custom).
+- Custom hotspot icons with color and size options.
+- Drag-and-drop scene reordering.
+- Tour settings (auto-rotate, navbar, fullscreen, VR, gyroscope).
+- Publish/unpublish tours.
+- Duplicate tours.
 
-- Users can register and log in.
-- Auth uses access + refresh tokens.
+### 3) AI Tour Generation
+- Generate draft tours from uploaded panoramas.
+- AI scene analysis and description generation.
+- AI hotspot suggestions.
+- Track AI jobs reliably via polling and WebSocket.
+- Let users review and refine generated output in editor.
 
-### 2) Tours (MVP)
+### 4) Public Viewer
+- Load published/unlisted tours on desktop + mobile.
+- Navigate scenes via thumbnails and hotspots.
+- Stable fullscreen behavior.
+- Tour likes (session-based for anonymous viewers).
+- VR/gyroscope mode support.
 
-- Create, edit, delete tours.
-- Manage tour `status` (`draft|published|archived`) and `visibility` (`private|unlisted|public`).
-- Configure basic viewer settings (see `../00-conventions.md`).
+### 5) Embed + Share
+- iframe embed generation with URL controls.
+- Public share link generation and copy flows.
+- QR code generation and download.
+- Social sharing (Facebook, Twitter/X, LinkedIn, WhatsApp, Email).
+- Server-rendered rich previews (OG + Twitter Cards).
 
-### 3) Scenes (MVP)
+### 6) Branding
+- Per-tour branding: colors (primary, secondary, accent, text, background), logo, font, button style.
+- Watermark toggle and position.
+- Preset themes.
 
-- Upload panoramas.
-- Create scenes from uploaded files.
-- Reorder scenes.
+### 7) Floor Plans
+- Multi-floor plan upload and management.
+- Scene marker placement on floor plans.
+- Floor plan overlay in viewer with floor switching.
 
-### 4) Hotspots (MVP)
+### 8) Analytics
+- Event tracking: tour views, scene views, hotspot clicks, shares, likes.
+- Per-tour analytics dashboard with date range filtering.
+- Device and country breakdown.
+- Dashboard with summary statistics.
 
-- Create/edit/delete hotspots with canonical types:
-  - `navigation`, `info`, `link`, `audio`, `video`
-- Place hotspots using yaw/pitch coordinates.
+### 9) Profile & Settings
+- Profile view/edit (name, email, avatar).
+- Password change.
+- Usage statistics.
+- Dark/light/system theme.
 
-### 5) Public viewer (MVP)
+## Explicitly De-prioritized for Current Phase
 
-- Public/unlisted tours render in a fast, mobile-friendly viewer.
-- Viewer supports hotspots, floor plans, and fullscreen.
+- Password-protected tours
+- Background audio
+- Advanced analytics (heatmaps, session recordings)
+- Video overlays/integration
+- Extended WebXR feature set
+- Custom domains
+- Google Analytics integration
+- Photo editing/retouching
+- Measurement tools
+- Internationalization (i18n)
 
-### 6) Embed (MVP)
+## Acceptance Gates
 
-- Iframe embed with URL parameters.
-- Basic `postMessage` API for integrations.
+- Core flows are testable and stable:
+  - AI generate -> review -> edit
+  - publish -> view public
+  - share -> open (link + QR code)
+  - embed -> render
+  - like -> count updates
+- No dead links in primary navigation.
+- User-facing docs match implemented routes and behavior.
+- Unit tests pass for core components and stores.
+- E2E tests pass for core user flows.
 
-### 7) Floor plans (MVP)
-
-- Upload floor plan images and place scene markers.
-- Viewer shows a floor plan overlay.
-
-### 8) Branding (MVP)
-
-- Per-tour branding: logo URL, primary color, watermark toggle.
-
-### 9) Analytics (MVP)
-
-- Ingest events from public viewing.
-- Provide per-tour analytics summaries.
-
-## Explicitly out of scope (Post‑MVP)
-
-- AI authoring/automation features.
-- Domain whitelabel/custom domains.
-- Heatmaps, session recording, and real-time dashboards.
-
-## MVP acceptance gates
-
-- **Security**: private tours are never accessible without auth.
-- **Performance**: public tour loads quickly on mid-tier mobile networks.
-- **Reliability**: upload and publish flows are resilient to retries.
-
-## References
-
-- Schemas and conventions: `../00-conventions.md`
-- API contract: `../technical/api-specification.md`
-- Feature specs: `../features/README.md`
+**Document Links**:
+- [Future Features](future-features.md) → Next: Competitor roadmap
+- [AI Roadmap](ai-roadmap.md) → AI feature phases
+- [Roadmap Index](README.md) ← Back

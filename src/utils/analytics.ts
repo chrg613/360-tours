@@ -12,6 +12,18 @@ interface ExportOptions {
 }
 
 /**
+ * Escape a value for CSV output.
+ * Wraps in quotes if the value contains commas, quotes, or newlines.
+ */
+function escapeCsvValue(value: string | number): string {
+  const str = String(value);
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+/**
  * Convert analytics data to CSV format
  */
 export function analyticsToCSV(analytics: TourAnalytics, tourTitle: string): string {
@@ -49,7 +61,7 @@ export function analyticsToCSV(analytics: TourAnalytics, tourTitle: string): str
     lines.push('=== Daily Views ===');
     lines.push('Date,Views');
     analytics.daily_views.forEach((day) => {
-      lines.push(`${day.date},${day.views}`);
+      lines.push(`${escapeCsvValue(day.date)},${day.views}`);
     });
     lines.push('');
   }
@@ -59,7 +71,7 @@ export function analyticsToCSV(analytics: TourAnalytics, tourTitle: string): str
     lines.push('=== Scene Views ===');
     lines.push('Scene ID,Views');
     Object.entries(analytics.scene_views).forEach(([sceneId, views]) => {
-      lines.push(`${sceneId},${views}`);
+      lines.push(`${escapeCsvValue(sceneId)},${views}`);
     });
     lines.push('');
   }
@@ -69,7 +81,7 @@ export function analyticsToCSV(analytics: TourAnalytics, tourTitle: string): str
     lines.push('=== Hotspot Clicks ===');
     lines.push('Hotspot ID,Clicks');
     Object.entries(analytics.hotspot_clicks).forEach(([hotspotId, clicks]) => {
-      lines.push(`${hotspotId},${clicks}`);
+      lines.push(`${escapeCsvValue(hotspotId)},${clicks}`);
     });
     lines.push('');
   }
@@ -81,7 +93,7 @@ export function analyticsToCSV(analytics: TourAnalytics, tourTitle: string): str
     Object.entries(analytics.country_breakdown)
       .sort(([, a], [, b]) => b - a)
       .forEach(([country, views]) => {
-        lines.push(`${country},${views}`);
+        lines.push(`${escapeCsvValue(country)},${views}`);
       });
   }
 
@@ -180,17 +192,5 @@ export function calculatePercentageChange(current: number, previous: number): nu
   return Math.round(((current - previous) / previous) * 100);
 }
 
-/**
- * Format duration in seconds to human-readable string
- */
-export function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  if (seconds < 3600) {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.round(seconds % 60);
-    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
-  }
-  const hours = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-}
+// Re-export formatDuration from format utils for backwards compatibility
+export { formatDuration } from './format';

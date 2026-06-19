@@ -91,6 +91,7 @@ function SortableSceneItem({
           <img
             src={scene.thumbnail_url || scene.image_url}
             alt={scene.title || `Scene ${index + 1}`}
+            loading="lazy"
             className="h-full w-full object-cover"
             draggable={false}
           />
@@ -221,29 +222,45 @@ export function ScenePanel({
     setIsUploading(true);
 
     try {
-      for (const file of files) {
+      const validFiles = files.filter((file) => {
         const validation = validateImageFile(file);
         if (!validation.valid) {
           toast('error', validation.error || 'File could not be uploaded.', { title: 'Invalid file' });
-          continue;
+          return false;
         }
+        return true;
+      });
 
-        const result = await uploadApi.uploadFile(file, {
-          folder: 'scenes',
-          visibility: 'public',
-        });
+      if (validFiles.length === 0) return;
 
-        // Backend returns public_url; thumbnail_url is generated later by image processing
-        await toursApi.createScene(tourId, {
-          image_url: result.public_url,
-          title: file.name.replace(/\.[^/.]+$/, ''),
-        });
-      }
+      const results = await Promise.allSettled(
+        validFiles.map(async (file) => {
+          const uploadResult = await uploadApi.uploadFile(file, {
+            folder: 'scenes',
+            visibility: 'public',
+          });
+          await toursApi.createScene(tourId, {
+            image_url: uploadResult.public_url,
+            title: file.name.replace(/\.[^/.]+$/, ''),
+          });
+        })
+      );
+
+      const successCount = results.filter((r) => r.status === 'fulfilled').length;
+      const errorCount = results.filter((r) => r.status === 'rejected').length;
 
       queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.SCENES, tourId] });
-      toast('success', `${files.length} scene${files.length > 1 ? 's' : ''} added to the tour.`, { title: 'Scenes uploaded' });
+      if (successCount > 0) {
+        toast(
+          errorCount > 0 ? 'warning' : 'success',
+          `${successCount} scene${successCount > 1 ? 's' : ''} added${errorCount > 0 ? `, ${errorCount} failed` : ''}.`,
+          { title: 'Upload complete' }
+        );
+      } else {
+        toast('error', 'All files failed to upload.', { title: 'Upload failed' });
+      }
     } catch {
-      toast('error', 'Some files could not be uploaded.', { title: 'Upload failed' });
+      toast('error', 'Failed to upload scenes. Please try again.', { title: 'Upload failed' });
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) {

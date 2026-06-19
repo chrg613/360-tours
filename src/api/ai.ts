@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { AIProcessingJob, Scene, Hotspot, HotspotPosition } from '@/types';
+import type { AIProcessingJob, Scene, Hotspot, HotspotPosition, CursorPaginatedResponse } from '@/types';
 
 // AI Job creation response
 interface AIJobResponse {
@@ -47,6 +47,25 @@ export interface DescriptionOptions {
   target_audience?: string;
 }
 
+// Reel generation options
+export interface ReelOptions {
+  scene_ids?: string[];
+  scene_duration?: number;
+  transition_duration?: number;
+  rotation_degrees?: number;
+}
+
+// Reel generation result
+export interface ReelResult {
+  tour_id: string;
+  video_url: string;
+  thumbnail_url?: string;
+  duration_seconds: number;
+  scene_count: number;
+  width: number;
+  height: number;
+}
+
 // AI Processing status response
 export interface AIJobStatusResponse {
   job: AIProcessingJob;
@@ -67,7 +86,7 @@ export async function generateTour(
 ): Promise<AIJobResponse> {
   const formData = new FormData();
 
-  options.images.forEach((image, index) => {
+  options.images.forEach((image) => {
     formData.append(`images`, image);
   });
 
@@ -153,6 +172,17 @@ export async function generateSceneDescription(
 }
 
 /**
+ * Generate a 360 reel video from a tour's scenes
+ */
+export async function generateReel(
+  tourId: string,
+  options?: ReelOptions
+): Promise<AIJobResponse> {
+  const response = await apiClient.post<AIJobResponse>(`/ai/tours/${tourId}/reel`, options);
+  return response.data;
+}
+
+/**
  * Get the status of an AI processing job
  */
 export async function getJobStatus(jobId: string): Promise<AIJobStatusResponse> {
@@ -169,14 +199,14 @@ export async function cancelJob(jobId: string): Promise<{ success: boolean }> {
 }
 
 /**
- * Get all AI jobs for the current user
+ * Get all AI jobs for the current user (cursor pagination)
  */
 export async function getJobs(options?: {
   status?: 'pending' | 'processing' | 'completed' | 'failed';
+  cursor?: string | null;
   limit?: number;
-  offset?: number;
-}): Promise<{ jobs: AIProcessingJob[]; total: number }> {
-  const response = await apiClient.get<{ jobs: AIProcessingJob[]; total: number }>('/ai/jobs', {
+}): Promise<CursorPaginatedResponse<AIProcessingJob>> {
+  const response = await apiClient.get<CursorPaginatedResponse<AIProcessingJob>>('/ai/jobs', {
     params: options,
   });
   return response.data;
@@ -222,6 +252,7 @@ export const aiApi = {
   suggestTourHotspots,
   generateDescriptions,
   generateSceneDescription,
+  generateReel,
   getJobStatus,
   cancelJob,
   getJobs,

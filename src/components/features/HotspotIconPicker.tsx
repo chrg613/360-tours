@@ -1,43 +1,5 @@
 import { useState } from 'react';
 import {
-  ArrowRight,
-  ArrowUp,
-  ArrowDown,
-  ArrowLeft,
-  Info,
-  HelpCircle,
-  Volume2,
-  VolumeX,
-  Play,
-  Video,
-  Link,
-  ExternalLink,
-  Map,
-  MapPin,
-  Navigation,
-  Compass,
-  Eye,
-  Camera,
-  Image,
-  Star,
-  Heart,
-  Bookmark,
-  MessageCircle,
-  Phone,
-  Mail,
-  Globe,
-  Home,
-  Building,
-  Bed,
-  Bath,
-  Car,
-  Utensils,
-  Trees,
-  Sun,
-  Moon,
-  type LucideIcon,
-} from 'lucide-react';
-import {
   Popover,
   PopoverTrigger,
   PopoverContent,
@@ -50,70 +12,11 @@ import {
   TabsContent,
 } from '@/components/ui';
 import { cn } from '@/utils';
-
-// Icon categories for organization
-const ICON_CATEGORIES = {
-  navigation: {
-    label: 'Navigation',
-    icons: [
-      { name: 'arrow-right', icon: ArrowRight },
-      { name: 'arrow-up', icon: ArrowUp },
-      { name: 'arrow-down', icon: ArrowDown },
-      { name: 'arrow-left', icon: ArrowLeft },
-      { name: 'navigation', icon: Navigation },
-      { name: 'compass', icon: Compass },
-      { name: 'map', icon: Map },
-      { name: 'map-pin', icon: MapPin },
-    ],
-  },
-  info: {
-    label: 'Information',
-    icons: [
-      { name: 'info', icon: Info },
-      { name: 'help-circle', icon: HelpCircle },
-      { name: 'eye', icon: Eye },
-      { name: 'message-circle', icon: MessageCircle },
-      { name: 'bookmark', icon: Bookmark },
-      { name: 'star', icon: Star },
-      { name: 'heart', icon: Heart },
-    ],
-  },
-  media: {
-    label: 'Media',
-    icons: [
-      { name: 'volume-2', icon: Volume2 },
-      { name: 'volume-x', icon: VolumeX },
-      { name: 'play', icon: Play },
-      { name: 'video', icon: Video },
-      { name: 'camera', icon: Camera },
-      { name: 'image', icon: Image },
-    ],
-  },
-  links: {
-    label: 'Links',
-    icons: [
-      { name: 'link', icon: Link },
-      { name: 'external-link', icon: ExternalLink },
-      { name: 'globe', icon: Globe },
-      { name: 'mail', icon: Mail },
-      { name: 'phone', icon: Phone },
-    ],
-  },
-  property: {
-    label: 'Property',
-    icons: [
-      { name: 'home', icon: Home },
-      { name: 'building', icon: Building },
-      { name: 'bed', icon: Bed },
-      { name: 'bath', icon: Bath },
-      { name: 'car', icon: Car },
-      { name: 'utensils', icon: Utensils },
-      { name: 'trees', icon: Trees },
-      { name: 'sun', icon: Sun },
-      { name: 'moon', icon: Moon },
-    ],
-  },
-};
+import {
+  DEFAULT_HOTSPOT_ICON,
+  HOTSPOT_ICON_BY_NAME,
+  HOTSPOT_ICON_CATEGORIES,
+} from './hotspotIcons';
 
 // Predefined colors
 const PRESET_COLORS = [
@@ -149,15 +52,6 @@ interface HotspotIconPickerProps {
   trigger?: React.ReactNode;
 }
 
-// Get icon component by name
-export function getIconByName(name: string): LucideIcon {
-  for (const category of Object.values(ICON_CATEGORIES)) {
-    const found = category.icons.find((i) => i.name === name);
-    if (found) return found.icon;
-  }
-  return Info; // Default fallback
-}
-
 export function HotspotIconPicker({
   value,
   onChange,
@@ -166,7 +60,7 @@ export function HotspotIconPicker({
   const [isOpen, setIsOpen] = useState(false);
   const [customColor, setCustomColor] = useState(value.iconColor);
 
-  const CurrentIcon = getIconByName(value.iconName);
+  const CurrentIcon = HOTSPOT_ICON_BY_NAME[value.iconName] ?? DEFAULT_HOTSPOT_ICON;
 
   const handleIconSelect = (iconName: string) => {
     onChange({ ...value, iconName });
@@ -222,7 +116,7 @@ export function HotspotIconPicker({
           {/* Icon Selection */}
           <TabsContent value="icon" className="m-0 max-h-64 overflow-y-auto p-3">
             <div className="space-y-4">
-              {Object.entries(ICON_CATEGORIES).map(([key, category]) => (
+              {Object.entries(HOTSPOT_ICON_CATEGORIES).map(([key, category]) => (
                 <div key={key}>
                   <p className="mb-2 text-xs font-medium text-[var(--color-text-muted)]">
                     {category.label}

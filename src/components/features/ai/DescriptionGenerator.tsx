@@ -26,11 +26,12 @@ import {
   SelectValue,
   Badge,
 } from '@/components/ui';
-import { cn } from '@/utils';
+import { useToast } from '@/hooks';
 import type { Scene } from '@/types';
 import type { DescriptionOptions } from '@/api';
 import { AIJobStatus } from './AIJobStatus';
 import { aiApi } from '@/api';
+import { copyToClipboard } from '@/utils/copyToClipboard';
 
 interface DescriptionGeneratorProps {
   open: boolean;
@@ -49,6 +50,7 @@ export function DescriptionGenerator({
   onApply,
   isLoading = false,
 }: DescriptionGeneratorProps) {
+  const { error: toastError } = useToast();
   const [jobId, setJobId] = useState<string | null>(null);
   const [descriptions, setDescriptions] = useState<Record<string, string>>({});
   const [editedDescriptions, setEditedDescriptions] = useState<Record<string, string>>({});
@@ -81,9 +83,10 @@ export function DescriptionGenerator({
     }
   };
 
-  const handleJobError = () => {
+  const handleJobError = (job: unknown, errorMessage: string) => {
     setIsGenerating(false);
     setJobId(null);
+    toastError(errorMessage || 'Failed to generate descriptions', { title: 'Generation failed' });
   };
 
   const handleEditDescription = (sceneId: string, newDescription: string) => {
@@ -94,17 +97,7 @@ export function DescriptionGenerator({
   };
 
   const handleCopyDescription = async (description: string) => {
-    try {
-      await navigator.clipboard.writeText(description);
-    } catch {
-      // Fallback
-      const textarea = document.createElement('textarea');
-      textarea.value = description;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-    }
+    await copyToClipboard(description);
   };
 
   const handleResetDescription = (sceneId: string) => {

@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 // Mock authenticated session
 test.describe('Tour Management', () => {
   // Skip auth for now - these tests check page structure
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async () => {
     // In a real scenario, we'd set up auth state here
     // For now, we'll test what's accessible
   });
@@ -46,7 +46,7 @@ test.describe('Tour Management', () => {
 
 test.describe('Tour Creation Wizard', () => {
   test('should redirect to login when not authenticated', async ({ page }) => {
-    await page.goto('/tours/new');
+    await page.goto('/tours/create');
 
     // Should redirect to login
     await expect(page).toHaveURL(/login/);

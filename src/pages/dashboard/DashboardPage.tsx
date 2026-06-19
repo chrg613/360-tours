@@ -1,7 +1,5 @@
-import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { format, subDays } from 'date-fns';
 import {
   Images,
   Eye,
@@ -46,32 +44,18 @@ export function DashboardPage() {
 
   // Fetch recent tours
   const { data: toursData, isLoading: isLoadingTours } = useQuery({
-    queryKey: [QUERY_KEYS.TOURS, { page: 1, page_size: 5 }],
-    queryFn: () => toursApi.getTours({ page: 1, page_size: 5 }),
+    queryKey: [QUERY_KEYS.TOURS, 'recent', { limit: 5 }],
+    queryFn: () => toursApi.getTours({ limit: 5 }),
+  });
+
+  // Fetch realtime stats (includes recent daily views)
+  const { data: realtimeStats } = useQuery({
+    queryKey: [QUERY_KEYS.DASHBOARD_STATS, 'realtime'],
+    queryFn: () => toursApi.getDashboardRealtime(),
   });
 
   const recentTours = toursData?.items || [];
-
-  // Generate mock weekly data based on total views
-  // In production, this would come from a dedicated analytics endpoint
-  const viewsData = useMemo(() => {
-    const totalViews = stats?.total_views || 0;
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const today = new Date().getDay();
-
-    // Distribute views across the week with some variation
-    return days.map((day, index) => {
-      const dayIndex = (today + index - 6) % 7;
-      const variation = 0.7 + Math.random() * 0.6; // 70% to 130%
-      const baseViews = totalViews / 7;
-      // More views on weekends
-      const weekendMultiplier = (dayIndex === 0 || dayIndex === 6) ? 1.3 : 1;
-      return {
-        date: day,
-        views: Math.round(baseViews * variation * weekendMultiplier),
-      };
-    });
-  }, [stats?.total_views]);
+  const viewsData = realtimeStats?.recent_views || [];
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -130,11 +114,16 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent>
             <Progress
-              value={(stats.storage_used / stats.storage_limit) * 100}
+              value={
+                stats.storage_limit > 0
+                  ? Math.min(100, (stats.storage_used / stats.storage_limit) * 100)
+                  : 0
+              }
               className="h-2"
             />
             <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-              {formatBytes(stats.storage_used)} of {formatBytes(stats.storage_limit)} used
+              {formatBytes(stats.storage_used)} of{' '}
+              {stats.storage_limit > 0 ? formatBytes(stats.storage_limit) : 'Unlimited'} used
             </p>
           </CardContent>
         </Card>
@@ -228,6 +217,7 @@ export function DashboardPage() {
                         <img
                           src={tour.thumbnail_url}
                           alt={tour.title}
+                          loading="lazy"
                           className="h-full w-full object-cover"
                         />
                       ) : (

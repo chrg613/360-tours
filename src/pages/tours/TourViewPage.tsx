@@ -1,28 +1,48 @@
+import { useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Pencil, Eye, Share2, BarChart3 } from 'lucide-react';
-import { Button, PageLoader, Badge, Card, CardContent } from '@/components/ui';
+import { ArrowLeft, Pencil, Share2, BarChart3, Film } from 'lucide-react';
+import {
+  Button,
+  PageLoader,
+  Badge,
+  Card,
+  CardContent,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui';
 import { toursApi } from '@/api';
 import { QUERY_KEYS, ROUTES } from '@/constants';
-import { formatCompactNumber, formatDate, formatBytes } from '@/utils/format';
+import { formatCompactNumber, formatDate } from '@/utils/format';
 import { PanoramaViewer } from '@/components/features/PanoramaViewer';
+import { ShareModal } from '@/components/features/ShareModal';
+import { ReelGeneratorModal } from '@/components/features/ai';
 
 export function TourViewPage() {
   const { id } = useParams<{ id: string }>();
+  const [shareOpen, setShareOpen] = useState(false);
+  const [reelOpen, setReelOpen] = useState(false);
 
-  const { data: tour, isLoading } = useQuery({
+  const { data: tour, isLoading: isLoadingTour } = useQuery({
     queryKey: [QUERY_KEYS.TOUR, id],
     queryFn: () => toursApi.getTour(id!),
     enabled: !!id,
   });
 
-  const { data: scenes } = useQuery({
+  const { data: scenes, isLoading: isLoadingScenes } = useQuery({
     queryKey: [QUERY_KEYS.SCENES, id],
     queryFn: () => toursApi.getScenes(id!),
     enabled: !!id,
   });
 
-  if (isLoading) {
+  const sortedScenes = useMemo(
+    () => (scenes ? [...scenes].sort((a, b) => a.order_index - b.order_index) : undefined),
+    [scenes]
+  );
+
+  if (isLoadingTour || isLoadingScenes) {
     return <PageLoader message="Loading tour..." />;
   }
 
@@ -39,7 +59,7 @@ export function TourViewPage() {
     );
   }
 
-  const firstScene = scenes?.[0];
+  const firstScene = sortedScenes?.[0];
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -72,9 +92,33 @@ export function TourViewPage() {
               Analytics
             </Button>
           </Link>
-          <Button variant="outline">
-            <Share2 className="h-4 w-4" />
-            Share
+          {tour.status === 'published' ? (
+            <Button variant="outline" onClick={() => setShareOpen(true)}>
+              <Share2 className="h-4 w-4" />
+              Share
+            </Button>
+          ) : (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0}>
+                    <Button variant="outline" disabled title="Publish the tour to share it">
+                      <Share2 className="h-4 w-4" />
+                      Share
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Publish the tour to share it</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          <Button
+            variant="outline"
+            onClick={() => setReelOpen(true)}
+            disabled={!scenes || scenes.length === 0}
+          >
+            <Film className="h-4 w-4" />
+            Create Reel
           </Button>
           <Link to={`/tours/${id}/edit`}>
             <Button>
@@ -131,23 +175,25 @@ export function TourViewPage() {
       </div>
 
       {/* Scenes Grid */}
-      {scenes && scenes.length > 0 && (
+      {sortedScenes && sortedScenes.length > 0 && (
         <div>
           <h2 className="mb-4 text-lg font-semibold">Scenes</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {scenes.map((scene) => (
+            {sortedScenes.map((scene) => (
               <Card key={scene.id} className="overflow-hidden">
                 <div className="aspect-video overflow-hidden bg-[var(--color-surface)]">
                   {scene.thumbnail_url ? (
                     <img
                       src={scene.thumbnail_url}
                       alt={scene.title || 'Scene'}
+                      loading="lazy"
                       className="h-full w-full object-cover"
                     />
                   ) : (
                     <img
                       src={scene.image_url}
                       alt={scene.title || 'Scene'}
+                      loading="lazy"
                       className="h-full w-full object-cover"
                     />
                   )}
@@ -187,7 +233,11 @@ export function TourViewPage() {
             )}
             <div>
               <p className="text-sm text-[var(--color-text-muted)]">Visibility</p>
-              <p className="font-medium">{tour.is_public ? 'Public' : 'Private'}</p>
+              <Badge
+                variant={tour.visibility === 'public' ? 'success' : tour.visibility === 'unlisted' ? 'warning' : 'secondary'}
+              >
+                {tour.visibility === 'public' ? 'Public' : tour.visibility === 'unlisted' ? 'Unlisted' : 'Private'}
+              </Badge>
             </div>
             <div>
               <p className="text-sm text-[var(--color-text-muted)]">Auto Rotate</p>
@@ -200,6 +250,23 @@ export function TourViewPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Share Modal */}
+      <ShareModal
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        tourId={id!}
+        tourTitle={tour.title}
+        tourDescription={tour.description || undefined}
+      />
+
+      {/* Reel Generator Modal */}
+      <ReelGeneratorModal
+        open={reelOpen}
+        onOpenChange={setReelOpen}
+        tourId={id!}
+        scenes={scenes ?? []}
+      />
     </div>
   );
 }

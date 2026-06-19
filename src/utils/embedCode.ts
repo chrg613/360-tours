@@ -3,11 +3,15 @@
  * Generates iframe and JavaScript embed codes for tours
  */
 
+import { API_BASE_URL } from '@/constants';
+
 export interface EmbedOptions {
   width?: number | string;
   height?: number | string;
   autoplay?: boolean;
   showNavbar?: boolean;
+  minimal?: boolean;
+  autoHideControls?: boolean;
   enableFullscreen?: boolean;
   enableVR?: boolean;
   startSceneId?: string;
@@ -20,6 +24,8 @@ const DEFAULT_OPTIONS: Required<EmbedOptions> = {
   height: 500,
   autoplay: true,
   showNavbar: true,
+  minimal: false,
+  autoHideControls: false,
   enableFullscreen: true,
   enableVR: true,
   startSceneId: '',
@@ -38,6 +44,21 @@ function getBaseUrl(): string {
   return import.meta.env.VITE_APP_URL || 'https://360viewer.360ghar.com';
 }
 
+function getBackendBaseUrl(): string | null {
+  try {
+    return new URL(API_BASE_URL).origin;
+  } catch {
+    if (typeof window !== 'undefined') {
+      try {
+        return new URL(API_BASE_URL, window.location.origin).origin;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
 /**
  * Build query parameters from options
  */
@@ -47,23 +68,30 @@ function buildQueryParams(options: EmbedOptions): string {
   if (options.startSceneId) {
     params.set('scene', options.startSceneId);
   }
-  if (options.autoplay === false) {
-    params.set('autoplay', '0');
+
+  if (options.autoplay !== undefined) {
+    params.set('autoplay', options.autoplay ? 'true' : 'false');
   }
-  if (options.showNavbar === false) {
-    params.set('navbar', '0');
+  if (options.showNavbar !== undefined) {
+    params.set('navbar', options.showNavbar ? 'true' : 'false');
   }
-  if (options.enableFullscreen === false) {
-    params.set('fullscreen', '0');
+  if (options.minimal !== undefined) {
+    params.set('minimal', options.minimal ? 'true' : 'false');
   }
-  if (options.enableVR === false) {
-    params.set('vr', '0');
+  if (options.autoHideControls !== undefined) {
+    params.set('autohide', options.autoHideControls ? 'true' : 'false');
   }
-  if (options.autoRotate) {
-    params.set('rotate', '1');
+  if (options.enableFullscreen !== undefined) {
+    params.set('fullscreen', options.enableFullscreen ? 'true' : 'false');
   }
-  if (options.branding === false) {
-    params.set('branding', '0');
+  if (options.enableVR !== undefined) {
+    params.set('vr', options.enableVR ? 'true' : 'false');
+  }
+  if (options.autoRotate !== undefined) {
+    params.set('rotate', options.autoRotate ? 'true' : 'false');
+  }
+  if (options.branding !== undefined) {
+    params.set('branding', options.branding ? 'true' : 'false');
   }
 
   const queryString = params.toString();
@@ -100,7 +128,7 @@ export function generateIframeCode(tourId: string, options: EmbedOptions = {}): 
   width="${width}"
   height="${height}"
   frameborder="0"
-  allow="fullscreen; vr; xr; accelerometer; gyroscope"
+  allow="fullscreen; xr-spatial-tracking; accelerometer; gyroscope"
   allowfullscreen
   loading="lazy"
   style="border: none; border-radius: 8px;"
@@ -119,6 +147,8 @@ export function generateJsCode(tourId: string, options: EmbedOptions = {}): stri
       height: mergedOptions.height,
       autoplay: mergedOptions.autoplay,
       navbar: mergedOptions.showNavbar,
+      minimal: mergedOptions.minimal,
+      autohide: mergedOptions.autoHideControls,
       fullscreen: mergedOptions.enableFullscreen,
       vr: mergedOptions.enableVR,
       startScene: mergedOptions.startSceneId || undefined,
@@ -148,7 +178,7 @@ export function generateResponsiveCode(tourId: string, options: EmbedOptions = {
   <iframe
     src="${embedUrl}"
     style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none;"
-    allow="fullscreen; vr; xr; accelerometer; gyroscope"
+    allow="fullscreen; xr-spatial-tracking; accelerometer; gyroscope"
     allowfullscreen
     loading="lazy"
   ></iframe>
@@ -161,7 +191,14 @@ export function generateResponsiveCode(tourId: string, options: EmbedOptions = {
 export function generateShareUrl(tourId: string, options: EmbedOptions = {}): string {
   const baseUrl = getBaseUrl();
   const queryParams = buildQueryParams(options);
-  return `${baseUrl}/view/${tourId}${queryParams}`;
+  const viewerUrl = `${baseUrl}/view/${tourId}${queryParams}`;
+
+  const backendBaseUrl = getBackendBaseUrl();
+  if (!backendBaseUrl) return viewerUrl;
+
+  const shareUrl = new URL(`/share/tours/${tourId}`, backendBaseUrl);
+  shareUrl.searchParams.set('redirect', viewerUrl);
+  return shareUrl.toString();
 }
 
 /**
@@ -194,32 +231,6 @@ export function generateSocialShareLinks(
 }
 
 /**
- * Copy text to clipboard
+ * Copy text to clipboard — delegates to the centralized utility.
  */
-export async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } else {
-      // Fallback for older browsers
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-999999px';
-      textArea.style.top = '-999999px';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      try {
-        document.execCommand('copy');
-        return true;
-      } finally {
-        document.body.removeChild(textArea);
-      }
-    }
-  } catch {
-    console.error('Failed to copy to clipboard');
-    return false;
-  }
-}
+export { copyToClipboard } from './copyToClipboard';

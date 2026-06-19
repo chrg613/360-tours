@@ -29,6 +29,7 @@ import {
 } from '@/components/ui';
 import { cn } from '@/utils';
 import { useCollaborationStore, type ActivityItem } from '@/stores';
+import { formatDate, getLocalDateKey, parseServerTimestamp } from '@/utils/format';
 
 interface ActivityFeedProps {
   tourId: string;
@@ -117,11 +118,11 @@ export function ActivityFeed({ tourId, onRefresh, className }: ActivityFeedProps
   // Group activities by date
   const groupedActivities = filteredActivities.reduce(
     (groups, activity) => {
-      const date = new Date(activity.created_at).toLocaleDateString();
-      if (!groups[date]) {
-        groups[date] = [];
+      const dateKey = getLocalDateKey(activity.created_at);
+      if (!groups[dateKey]) {
+        groups[dateKey] = [];
       }
-      groups[date].push(activity);
+      groups[dateKey].push(activity);
       return groups;
     },
     {} as Record<string, ActivityItem[]>
@@ -148,7 +149,7 @@ export function ActivityFeed({ tourId, onRefresh, className }: ActivityFeedProps
   };
 
   const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
+    const date = parseServerTimestamp(dateString);
     return date.toLocaleTimeString(undefined, {
       hour: '2-digit',
       minute: '2-digit',
@@ -156,7 +157,7 @@ export function ActivityFeed({ tourId, onRefresh, className }: ActivityFeedProps
   };
 
   const formatDateHeader = (dateString: string) => {
-    const date = new Date(dateString);
+    const date = parseServerTimestamp(dateString);
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
@@ -167,11 +168,7 @@ export function ActivityFeed({ tourId, onRefresh, className }: ActivityFeedProps
     if (date.toDateString() === yesterday.toDateString()) {
       return 'Yesterday';
     }
-    return date.toLocaleDateString(undefined, {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric',
-    });
+    return formatDate(date, 'EEEE, MMM d');
   };
 
   const getActivityDescription = (activity: ActivityItem): string => {

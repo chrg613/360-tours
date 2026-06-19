@@ -7,6 +7,51 @@ afterEach(() => {
   cleanup();
 });
 
+// Mock localStorage/sessionStorage (Vitest/JSDOM can be configured without full webstorage)
+function createStorageMock() {
+  let store: Record<string, string> = {};
+
+  return {
+    getItem: vi.fn((key: string) => (key in store ? store[key] : null)),
+    setItem: vi.fn((key: string, value: string) => {
+      store[key] = String(value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      delete store[key];
+    }),
+    clear: vi.fn(() => {
+      store = {};
+    }),
+    key: vi.fn((index: number) => Object.keys(store)[index] ?? null),
+    get length() {
+      return Object.keys(store).length;
+    },
+  };
+}
+
+const localStorageMock = createStorageMock();
+const sessionStorageMock = createStorageMock();
+
+Object.defineProperty(window, 'localStorage', {
+  value: localStorageMock,
+  writable: true,
+});
+
+Object.defineProperty(window, 'sessionStorage', {
+  value: sessionStorageMock,
+  writable: true,
+});
+
+Object.defineProperty(globalThis, 'localStorage', {
+  value: localStorageMock,
+  writable: true,
+});
+
+Object.defineProperty(globalThis, 'sessionStorage', {
+  value: sessionStorageMock,
+  writable: true,
+});
+
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -62,6 +107,3 @@ Object.defineProperty(navigator, 'clipboard', {
   },
   writable: true,
 });
-
-// Suppress console errors during tests (optional)
-// vi.spyOn(console, 'error').mockImplementation(() => {});

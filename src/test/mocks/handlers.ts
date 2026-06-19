@@ -18,7 +18,7 @@ export const mockTour = {
   title: 'Test Tour',
   description: 'A test tour description',
   status: 'published',
-  is_public: true,
+  visibility: 'public',
   thumbnail_url: 'https://example.com/thumb.jpg',
   settings: {},
   created_at: '2024-01-01T00:00:00Z',
@@ -52,21 +52,12 @@ export const mockHotspot = {
 
 // API handlers
 export const handlers = [
-  // Auth
-  http.post('/api/v1/auth/login', () => {
-    return HttpResponse.json({
-      access_token: 'mock-access-token',
-      refresh_token: 'mock-refresh-token',
-      token_type: 'bearer',
-    });
-  }),
-
-  http.post('/api/v1/auth/logout', () => {
-    return HttpResponse.json({ message: 'Logged out' });
-  }),
-
   // Users
   http.get('/api/v1/users/me', () => {
+    return HttpResponse.json(mockUser);
+  }),
+
+  http.get('/api/v1/users/profile/', () => {
     return HttpResponse.json(mockUser);
   }),
 
@@ -78,9 +69,9 @@ export const handlers = [
   http.get('/api/v1/tours', () => {
     return HttpResponse.json({
       items: [mockTour],
-      total: 1,
-      page: 1,
-      per_page: 10,
+      next_cursor: null,
+      has_more: false,
+      limit: 20,
     });
   }),
 
@@ -111,6 +102,26 @@ export const handlers = [
 
   http.delete('/api/v1/tours/:id', () => {
     return HttpResponse.json({ message: 'Deleted' });
+  }),
+
+  // Upload media (cursor pagination)
+  http.get('/api/v1/upload/media', () => {
+    return HttpResponse.json({
+      items: [],
+      next_cursor: null,
+      has_more: false,
+      limit: 24,
+    });
+  }),
+
+  // AI jobs (cursor pagination)
+  http.get('/api/v1/ai/jobs', () => {
+    return HttpResponse.json({
+      items: [],
+      next_cursor: null,
+      has_more: false,
+      limit: 20,
+    });
   }),
 
   // Scenes

@@ -3,9 +3,11 @@ import { QueryProvider } from '@/lib/queryClient';
 import { router } from '@/lib/router';
 import { Toaster } from '@/components/ui/Toaster';
 import { ErrorBoundary } from '@/components/features/ErrorBoundary';
+import { GlobalErrorHandler, OfflineIndicator } from '@/components/common';
 import { useEffect } from 'react';
 import { useAuthStore } from '@/stores';
 import { useUIStore } from '@/stores';
+import { onAuthExpired } from '@/api';
 
 function ThemeInitializer() {
   const { theme } = useUIStore();
@@ -17,7 +19,6 @@ function ThemeInitializer() {
     } else if (theme === 'light') {
       root.classList.remove('dark');
     } else {
-      // System preference
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       if (prefersDark) {
         root.classList.add('dark');
@@ -37,7 +38,15 @@ function AuthInitializer() {
     checkAuth();
   }, [checkAuth]);
 
-  // Show nothing while checking auth
+  useEffect(() => {
+    const unsubscribe = onAuthExpired(() => {
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--color-background)]">
@@ -57,8 +66,10 @@ export default function App() {
     <ErrorBoundary>
       <QueryProvider>
         <ThemeInitializer />
+        <GlobalErrorHandler />
         <AuthInitializer />
         <Toaster />
+        <OfflineIndicator />
       </QueryProvider>
     </ErrorBoundary>
   );
