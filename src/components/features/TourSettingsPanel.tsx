@@ -423,6 +423,70 @@ export function TourSettingsPanel({
                 </div>
               </div>
 
+              {/* Embed Feature Toggles */}
+              <div className="grid grid-cols-2 gap-4 mt-4 mb-4">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="embed-autoplay">Autoplay</Label>
+                  <Switch
+                    id="embed-autoplay"
+                    checked={embedOptions.autoplay}
+                    onCheckedChange={(checked) =>
+                      setEmbedOptions((prev) => ({ ...prev, autoplay: checked }))
+                    }
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="embed-fullscreen">Enable Fullscreen</Label>
+                  <Switch
+                    id="embed-fullscreen"
+                    checked={embedOptions.enableFullscreen}
+                    onCheckedChange={(checked) =>
+                      setEmbedOptions((prev) => ({ ...prev, enableFullscreen: checked }))
+                    }
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="embed-navbar">Show Navigation</Label>
+                  <Switch
+                    id="embed-navbar"
+                    checked={embedOptions.showNavbar}
+                    onCheckedChange={(checked) =>
+                      setEmbedOptions((prev) => ({ ...prev, showNavbar: checked }))
+                    }
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="embed-vr">Enable VR</Label>
+                  <Switch
+                    id="embed-vr"
+                    checked={embedOptions.enableVR}
+                    onCheckedChange={(checked) =>
+                      setEmbedOptions((prev) => ({ ...prev, enableVR: checked }))
+                    }
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="embed-branding">Show Branding</Label>
+                  <Switch
+                    id="embed-branding"
+                    checked={embedOptions.branding}
+                    onCheckedChange={(checked) =>
+                      setEmbedOptions((prev) => ({ ...prev, branding: checked }))
+                    }
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="embed-minimal">Minimal Mode</Label>
+                  <Switch
+                    id="embed-minimal"
+                    checked={embedOptions.minimal}
+                    onCheckedChange={(checked) =>
+                      setEmbedOptions((prev) => ({ ...prev, minimal: checked }))
+                    }
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label>Embed Code</Label>
                 <div className="relative">

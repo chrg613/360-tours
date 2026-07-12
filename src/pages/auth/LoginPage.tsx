@@ -20,7 +20,7 @@ import {
 } from '@/utils/validation';
 import { ROUTES } from '@/constants';
 
-type Step = 'identifier' | 'password' | 'otp' | 'set-password';
+type Step = 'identifier' | 'password' | 'otp' | 'set-password' | 'signup-password';
 type IdentifierFormData = { identifier: string };
 
 function callbackErrorMessage(code: string | null): string | null {
@@ -38,7 +38,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { loginWithPassword, verifyLoginOtp, setPasswordAndComplete, isLoading, error, setError } =
+  const { loginWithPassword, verifyLoginOtp, setPasswordAndComplete, register, isLoading, error, setError } =
     useAuthStore();
 
   const [step, setStep] = useState<Step>('identifier');
@@ -87,6 +87,11 @@ export function LoginPage() {
     defaultValues: { password: '' },
   });
 
+  const signupPasswordForm = useForm<PasswordStepFormData>({
+    resolver: zodResolver(passwordStepSchema),
+    defaultValues: { password: '' },
+  });
+
   const otpForm = useForm<OTPFormData>({
     resolver: zodResolver(otpSchema),
     defaultValues: { token: '' },
@@ -130,15 +135,20 @@ export function LoginPage() {
         return;
       }
 
-      // OTP-first: unverified existing user, or unknown (treat as signup).
-      setIsSignupOtp(!status.exists);
-      // An unknown identifier has no password; an existing account is gated on
-      // has_password. Either way, force a set-password step after OTP succeeds.
-      setRequiresPasswordSetup(!status.exists || !status.has_password);
+      // New user signup flow with direct password entry
+      if (!status.exists) {
+        setStep('signup-password');
+        return;
+      }
+
+      // OTP-first: unverified existing user
+      setIsSignupOtp(false);
+      setRequiresPasswordSetup(!status.has_password);
+      
       if (channel === 'email') {
-        await supabaseAuth.requestEmailOtp({ email: data.identifier, shouldCreateUser: !status.exists });
+        await supabaseAuth.requestEmailOtp({ email: data.identifier, shouldCreateUser: false });
       } else {
-        await supabaseAuth.requestOtp({ phone: data.identifier, shouldCreateUser: !status.exists });
+        await supabaseAuth.requestOtp({ phone: data.identifier, shouldCreateUser: false });
       }
       resendTimer.start();
       setStep('otp');
@@ -189,6 +199,17 @@ export function LoginPage() {
     }
   };
 
+  // Step 4: direct password signup for new accounts
+  const onSubmitSignupPassword = async (data: PasswordStepFormData) => {
+    resetErrors();
+    try {
+      await register(channel, identifier, data.password);
+      navigate(from, { replace: true });
+    } catch {
+      // store sets `error`
+    }
+  };
+
   const resendOtp = async () => {
     if (resendTimer.isCoolingDown) return;
     resetErrors();
@@ -224,6 +245,7 @@ export function LoginPage() {
     setRequiresPasswordSetup(false);
     passwordForm.reset();
     setPasswordForm.reset();
+    signupPasswordForm.reset();
     otpForm.reset();
     resendTimer.reset();
     resetErrors();
@@ -459,6 +481,47 @@ export function LoginPage() {
             <Button type="submit" className="w-full" size="lg" isLoading={isLoading}>
               Set password and continue
             </Button>
+          </form>
+        )}
+
+        {/* Step 4: Direct password signup for new accounts */}
+        {step === 'signup-password' && (
+          <form onSubmit={signupPasswordForm.handleSubmit(onSubmitSignupPassword)} className="space-y-6">
+            <div className="rounded-lg bg-[var(--color-surface)] p-3 text-sm text-[var(--color-text-muted)]">
+              Create a password for your new account{' '}
+              <span className="font-medium text-[var(--color-text-primary)]">{identifier}</span>
+            </div>
+
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-text-muted)]" />
+              <Input
+                {...signupPasswordForm.register('password')}
+                type={showNewPassword ? 'text' : 'password'}
+                placeholder="Choose a password"
+                aria-label="Choose a password"
+                autoComplete="new-password"
+                required
+                error={signupPasswordForm.formState.errors.password?.message}
+                className="pl-10 pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword(!showNewPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              >
+                {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
+
+            <div className="flex gap-3">
+              <Button type="button" variant="outline" className="w-full" onClick={backToIdentifier}>
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
+              <Button type="submit" className="w-full" isLoading={isLoading}>
+                Create Account
+              </Button>
+            </div>
           </form>
         )}
       </div>

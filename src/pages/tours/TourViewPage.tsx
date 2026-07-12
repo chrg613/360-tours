@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Pencil, Share2, BarChart3, Film } from 'lucide-react';
@@ -19,11 +19,13 @@ import { formatCompactNumber, formatDate } from '@/utils/format';
 import { PanoramaViewer } from '@/components/features/PanoramaViewer';
 import { ShareModal } from '@/components/features/ShareModal';
 import { ReelGeneratorModal } from '@/components/features/ai';
+import { cn } from '@/utils';
 
 export function TourViewPage() {
   const { id } = useParams<{ id: string }>();
   const [shareOpen, setShareOpen] = useState(false);
   const [reelOpen, setReelOpen] = useState(false);
+  const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
 
   const { data: tour, isLoading: isLoadingTour } = useQuery({
     queryKey: [QUERY_KEYS.TOUR, id],
@@ -37,10 +39,22 @@ export function TourViewPage() {
     enabled: !!id,
   });
 
-  const sortedScenes = useMemo(
-    () => (scenes ? [...scenes].sort((a, b) => a.order_index - b.order_index) : undefined),
-    [scenes]
-  );
+  const sortedScenes = useMemo(() => {
+    const sceneSource = scenes?.length ? scenes : tour?.scenes;
+    return sceneSource ? [...sceneSource].sort((a, b) => a.order_index - b.order_index) : undefined;
+  }, [scenes, tour?.scenes]);
+
+  useEffect(() => {
+    if (!sortedScenes?.length) return;
+
+    setActiveSceneId((currentSceneId) => {
+      if (currentSceneId && sortedScenes.some((scene) => scene.id === currentSceneId)) {
+        return currentSceneId;
+      }
+
+      return tour?.settings?.initial_scene_id || sortedScenes[0].id;
+    });
+  }, [sortedScenes, tour?.settings?.initial_scene_id]);
 
   if (isLoadingTour || isLoadingScenes) {
     return <PageLoader message="Loading tour..." />;
@@ -59,7 +73,9 @@ export function TourViewPage() {
     );
   }
 
-  const firstScene = sortedScenes?.[0];
+  const activeScene =
+    sortedScenes?.find((scene) => scene.id === activeSceneId) ||
+    sortedScenes?.[0];
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -95,20 +111,20 @@ export function TourViewPage() {
           {tour.status === 'published' ? (
             <Button variant="outline" onClick={() => setShareOpen(true)}>
               <Share2 className="h-4 w-4" />
-              Share
+              Share & Embed
             </Button>
           ) : (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span tabIndex={0}>
-                    <Button variant="outline" disabled title="Publish the tour to share it">
+                    <Button variant="outline" disabled title="Publish the tour to create share and embed links">
                       <Share2 className="h-4 w-4" />
-                      Share
+                      Share & Embed
                     </Button>
                   </span>
                 </TooltipTrigger>
-                <TooltipContent>Publish the tour to share it</TooltipContent>
+                <TooltipContent>Publish the tour to create share and embed links</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           )}
@@ -133,8 +149,13 @@ export function TourViewPage() {
       <Card>
         <CardContent className="p-0">
           <div className="aspect-video overflow-hidden rounded-t-xl">
-            {firstScene ? (
-              <PanoramaViewer scene={firstScene} hotspots={firstScene.hotspots || []} />
+            {activeScene ? (
+              <PanoramaViewer
+                scene={activeScene}
+                hotspots={activeScene.hotspots || []}
+                tourSettings={tour.settings ?? undefined}
+                onSceneChange={setActiveSceneId}
+              />
             ) : (
               <div className="flex h-full min-h-[400px] items-center justify-center bg-[var(--color-surface)]">
                 <p className="text-[var(--color-text-muted)]">
@@ -180,7 +201,18 @@ export function TourViewPage() {
           <h2 className="mb-4 text-lg font-semibold">Scenes</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {sortedScenes.map((scene) => (
-              <Card key={scene.id} className="overflow-hidden">
+              <Card
+                key={scene.id}
+                className={cn(
+                  'overflow-hidden transition',
+                  scene.id === activeScene?.id && 'ring-2 ring-[var(--color-primary-500)]'
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => setActiveSceneId(scene.id)}
+                  className="block w-full text-left"
+                >
                 <div className="aspect-video overflow-hidden bg-[var(--color-surface)]">
                   {scene.thumbnail_url ? (
                     <img
@@ -206,6 +238,7 @@ export function TourViewPage() {
                     {scene.hotspots?.length || 0} hotspots
                   </p>
                 </CardContent>
+                </button>
               </Card>
             ))}
           </div>

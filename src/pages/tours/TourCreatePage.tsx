@@ -37,7 +37,7 @@ export function TourCreatePage() {
   const [step, setStep] = useState<'info' | 'upload'>('info');
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [createdTour, setCreatedTour] = useState<Tour | null>(null);
-  const [showAIWizard, setShowAIWizard] = useState(false);
+  const [showAIWizard, setShowAIWizard] = useState(true);
 
   const {
     register,
@@ -106,7 +106,7 @@ export function TourCreatePage() {
   const handleAIComplete = (tour: Tour) => {
     queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.TOURS] });
     queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.TOUR, tour.id] });
-    navigate(`/tours/${tour.id}/edit`);
+    navigate(`/tours/${tour.id}`);
   };
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -246,7 +246,7 @@ export function TourCreatePage() {
   const overallProgress = totalUploadBytes > 0 ? Math.round((uploadedBytes * 100) / totalUploadBytes) : 0;
 
   return (
-    <div className="animate-fade-in mx-auto max-w-2xl space-y-6">
+    <div className="animate-fade-in mx-auto max-w-3xl space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button
@@ -258,27 +258,42 @@ export function TourCreatePage() {
         </Button>
         <div>
           <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">
-            Create New Tour
+            Create AI Tour
           </h1>
           <p className="text-[var(--color-text-muted)]">
-            {step === 'info' ? 'Step 1: Tour Information' : 'Step 2: Upload Scenes'}
+            Upload panoramas and let AI build the tour preview with connected hotspots.
           </p>
         </div>
         <div className="ml-auto">
-          <Button variant="outline" onClick={() => setShowAIWizard(true)}>
+          <Button onClick={() => setShowAIWizard(true)}>
             <Sparkles className="h-4 w-4" />
-            AI Generate
+            Open AI Builder
           </Button>
         </div>
       </div>
+
+      <Card className="border-[var(--color-primary-200)] bg-[var(--color-primary-50)]/50">
+        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="text-base">AI builder is the default flow</CardTitle>
+            <CardDescription className="mt-1">
+              It uploads the images, analyzes rooms, writes scene details, connects hotspots, and opens the tour preview.
+            </CardDescription>
+          </div>
+          <Button onClick={() => setShowAIWizard(true)}>
+            <Sparkles className="h-4 w-4" />
+            Start AI Builder
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Step 1: Tour Info */}
       {step === 'info' && (
         <Card>
           <CardHeader>
-            <CardTitle>Tour Information</CardTitle>
+            <CardTitle>Manual Tour Information</CardTitle>
             <CardDescription>
-              Enter the basic information for your virtual tour
+              Use this only when you want to build a tour without the AI pipeline.
             </CardDescription>
           </CardHeader>
           <CardContent>

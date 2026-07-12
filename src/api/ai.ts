@@ -37,6 +37,7 @@ export interface TourGenerationOptions {
   auto_detect_rooms?: boolean;
   auto_place_hotspots?: boolean;
   auto_generate_descriptions?: boolean;
+  spatial?: boolean;
 }
 
 // Description generation options
@@ -101,11 +102,15 @@ export async function generateTour(
   if (options.auto_generate_descriptions !== undefined) {
     formData.append('auto_generate_descriptions', String(options.auto_generate_descriptions));
   }
+  if (options.spatial !== undefined) {
+    formData.append('spatial', String(options.spatial));
+  }
 
   const response = await apiClient.post<AIJobResponse>('/ai/tours/generate', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
+    timeout: 180000,
     onUploadProgress: (progressEvent) => {
       if (onProgress && progressEvent.total) {
         const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
@@ -243,6 +248,27 @@ export async function applyHotspotSuggestions(
   return response.data;
 }
 
+/**
+ * Run spatial AI pipeline on existing tour to auto-connect scenes via doorway detection
+ */
+export async function spatialConnect(tourId: string): Promise<AIJobResponse> {
+  const response = await apiClient.post<AIJobResponse>(`/ai/tours/${tourId}/spatial-connect`);
+  return response.data;
+}
+
+/**
+ * Analyze a floor plan image with AI to auto-detect rooms and place markers
+ */
+export async function analyzeFloorPlan(
+  tourId: string,
+  floorPlanId: string
+): Promise<AIJobResponse> {
+  const response = await apiClient.post<AIJobResponse>(
+    `/ai/tours/${tourId}/floor-plans/${floorPlanId}/analyze`
+  );
+  return response.data;
+}
+
 // Export all AI API functions
 export const aiApi = {
   generateTour,
@@ -258,4 +284,6 @@ export const aiApi = {
   getJobs,
   applySceneAnalysis,
   applyHotspotSuggestions,
+  spatialConnect,
+  analyzeFloorPlan,
 };

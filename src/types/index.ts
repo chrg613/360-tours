@@ -151,6 +151,7 @@ export interface Scene {
 }
 
 export interface SceneMetadata {
+  room_type?: string;
   initial_view?: {
     yaw: number;
     pitch: number;
@@ -315,10 +316,10 @@ export interface LoginCredentials {
 }
 
 export interface RegisterCredentials {
-  phone: string;
+  channel: 'email' | 'phone';
+  identifier: string;
   password: string;
   full_name?: string;
-  email?: string;
 }
 
 export interface AuthTokens {

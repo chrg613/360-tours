@@ -64,6 +64,7 @@ import {
   Separator,
 } from '@/components/ui';
 import { toursApi } from '@/api';
+import { aiApi } from '@/api';
 import { QUERY_KEYS, ROUTES } from '@/constants';
 import { useTourEditorStore, useCollaborationStore } from '@/stores';
 import { PanoramaViewer } from '@/components/features/PanoramaViewer';
@@ -80,6 +81,7 @@ import {
   HotspotSuggestions,
   ReelGeneratorModal,
 } from '@/components/features/ai';
+import { AIJobStatus } from '@/components/features/ai/AIJobStatus';
 import { ActivityFeed } from '@/components/features';
 import { cn } from '@/utils';
 import { useEffect, useState, useCallback } from 'react';
@@ -114,6 +116,8 @@ export function TourEditPage() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'editor' | 'viewer'>('viewer');
   const [isInviting, setIsInviting] = useState(false);
+  const [showSpatialConnectDialog, setShowSpatialConnectDialog] = useState(false);
+  const [spatialConnectJobId, setSpatialConnectJobId] = useState<string | null>(null);
 
   const {
     collaborators,
@@ -253,6 +257,18 @@ export function TourEditPage() {
     undo,
     redo,
   ]);
+
+  // Spatial Connect mutation
+  const spatialConnectMutation = useMutation({
+    mutationFn: () => aiApi.spatialConnect(id!),
+    onSuccess: (response) => {
+      setSpatialConnectJobId(response.job.id);
+      toast('info', 'AI is analyzing your panoramas for doorways...', { title: 'Spatial Connection Started' });
+    },
+    onError: () => {
+      toast('error', 'Could not start spatial analysis. Please try again.', { title: 'Failed' });
+    },
+  });
 
   // Publish tour mutation
   const publishMutation = useMutation({
@@ -779,6 +795,16 @@ export function TourEditPage() {
                   Floor Plans
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
+                {currentTour?.scenes && currentTour.scenes.length >= 2 && (
+                  <DropdownMenuItem
+                    id="ai-spatial-connect-btn"
+                    onClick={() => setShowSpatialConnectDialog(true)}
+                    disabled={spatialConnectMutation.isPending}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Rebuild AI Connections
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={() => setShowSceneAnalysis(true)}>
                   <Sparkles className="h-4 w-4" />
                   AI Scene Analysis
@@ -1057,6 +1083,58 @@ export function TourEditPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* AI Spatial Connect Confirmation Dialog */}
+        <AlertDialog open={showSpatialConnectDialog} onOpenChange={setShowSpatialConnectDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>AI Spatial Connection</AlertDialogTitle>
+              <AlertDialogDescription>
+                AI will analyze every panorama in your tour to detect doorways and automatically
+                place navigation hotspots at the correct positions.
+                <br /><br />
+                This will replace any existing auto-generated hotspots. Manually placed hotspots
+                will not be affected.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setShowSpatialConnectDialog(false);
+                  spatialConnectMutation.mutate();
+                }}
+              >
+                <Sparkles className="h-4 w-4" />
+                Start AI Analysis
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* AI Spatial Connect Progress Banner */}
+        {spatialConnectJobId && (
+          <div className="fixed bottom-4 right-4 w-80 z-50 bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-lg shadow-lg p-4">
+            <p className="text-sm font-medium mb-2 flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-[var(--color-primary-500)]" />
+              AI Spatial Connection
+            </p>
+            <AIJobStatus
+              jobId={spatialConnectJobId}
+              onComplete={() => {
+                setSpatialConnectJobId(null);
+                queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.TOUR, id] });
+                queryClient.invalidateQueries({ queryKey: [QUERY_KEYS.SCENES, id] });
+                toast('success', 'Navigation hotspots have been placed at detected doorways.', { title: 'Spatial Connection Complete' });
+              }}
+              onError={(_, msg) => {
+                setSpatialConnectJobId(null);
+                toast('error', msg || 'Spatial analysis failed.', { title: 'AI Connect Failed' });
+              }}
+              showCancelButton={false}
+            />
+          </div>
+        )}
 
         {/* Unsaved Changes Blocker Dialog */}
         {blocker.state === 'blocked' && (

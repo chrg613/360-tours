@@ -129,16 +129,18 @@ export const supabaseAuth = {
   },
 
   async signUp(payload: {
-    phone: string;
+    channel: 'email' | 'phone';
+    identifier: string;
     password: string;
     data?: Record<string, unknown>;
   }): Promise<{ session: SupabaseSession | null }> {
     const client = requireClient();
-    const { data, error } = await client.auth.signUp({
-      phone: payload.phone,
-      password: payload.password,
-      options: { data: payload.data ?? {} },
-    });
+    
+    const signUpData = payload.channel === 'email' 
+      ? { email: payload.identifier, password: payload.password, options: { data: payload.data ?? {} } }
+      : { phone: payload.identifier, password: payload.password, options: { data: payload.data ?? {} } };
+      
+    const { data, error } = await client.auth.signUp(signUpData);
     if (error) {
       throw new Error(error.message);
     }

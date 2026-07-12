@@ -29,7 +29,7 @@ interface AuthActions {
    * after OTP when the account had no password.
    */
   setPasswordAndComplete: (channel: IdentifierChannel, identifier: string, password: string) => Promise<void>;
-  register: (data: { phone: string; password: string; full_name?: string; email?: string }) => Promise<void>;
+  register: (channel: 'email' | 'phone', identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchCurrentUser: () => Promise<void>;
   checkAuth: () => Promise<void>;
@@ -160,10 +160,10 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     }
   },
 
-  register: async (data) => {
+  register: async (channel, identifier, password) => {
     set({ isLoading: true, error: null });
     try {
-      const { user, tokens } = await authApi.register(data);
+      const { user, tokens } = await authApi.register({ channel, identifier, password });
       if (!tokens?.access_token || !tokens?.refresh_token || !user) {
         set({
           user: null,

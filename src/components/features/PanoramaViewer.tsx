@@ -250,7 +250,7 @@ export function PanoramaViewer({
       defaultPitch: initialView?.pitch ?? VIEWER_DEFAULTS.defaultPitch,
       defaultYaw: initialView?.yaw ?? VIEWER_DEFAULTS.defaultYaw,
       defaultZoomLvl:
-        typeof initialView === 'object' && 'zoom' in initialView && typeof initialView.zoom === 'number'
+        initialView !== null && typeof initialView === 'object' && 'zoom' in initialView && typeof initialView.zoom === 'number'
           ? initialView.zoom
           : VIEWER_DEFAULTS.defaultZoom,
       minFov: scene.metadata?.camera?.min_fov ?? VIEWER_DEFAULTS.minFov,
@@ -395,18 +395,34 @@ export function PanoramaViewer({
         }
       };
 
+      const targetZoom = targetViewRef.current?.zoom ?? (initialView !== null && typeof initialView === 'object' && 'zoom' in initialView && typeof initialView.zoom === 'number'
+          ? initialView.zoom
+          : VIEWER_DEFAULTS.defaultZoom);
+
+      const isNav = isNavigatingRef.current;
+      isNavigatingRef.current = false;
+      
+      const pitch = targetViewRef.current?.pitch ?? initialView?.pitch ?? 0;
+      const yaw = targetViewRef.current?.yaw ?? initialView?.yaw ?? 0;
+      
+      // Clear target view override after using it once
+      targetViewRef.current = null;
+
       viewer
         .setPanorama(url, {
           transition: true,
           // The app renders its own branded loading overlay; suppress PSV's.
           showLoader: false,
-          position: { pitch: initialView?.pitch ?? 0, yaw: initialView?.yaw ?? 0 },
-          zoom:
-            typeof initialView === 'object' && 'zoom' in initialView && typeof initialView.zoom === 'number'
-              ? initialView.zoom
-              : VIEWER_DEFAULTS.defaultZoom,
+          position: { pitch, yaw },
+          zoom: isNav ? 80 : targetZoom,
         })
-        .then(() => settle(true))
+        .then(() => {
+          settle(true);
+          // If we transitioned via hotspot, animate the zoom out for a "travelling" effect
+          if (isNav && viewerRef.current) {
+            viewerRef.current.animate({ zoom: targetZoom, speed: '2rpm' });
+          }
+        })
         .catch(() => settle(false));
     },
     [scheduleAutoRotate, tourSettings?.initial_view]
@@ -414,6 +430,15 @@ export function PanoramaViewer({
 
   // Keep a stable ref to the latest processSceneQueue so the settle() callback can
   // re-invoke it without stale closures.
+  const isViewerReadyRef = useRef(false);
+  const isNavigatingRef = useRef(false);
+  const targetViewRef = useRef<{yaw: number, pitch: number, zoom?: number} | null>(null);
+
+  // Sync isViewerReady state with ref
+  useEffect(() => {
+    isViewerReadyRef.current = isViewerReady;
+  }, [isViewerReady]);
+
   useEffect(() => {
     processQueueRef.current = processSceneQueue;
   }, [processSceneQueue]);
@@ -578,14 +603,39 @@ export function PanoramaViewer({
     });
 
     // Handle marker clicks
-    const handleMarkerSelect = (e: { type: string; marker?: { data?: unknown } }) => {
+    const handleMarkerSelect = (e: { type: string; marker?: { data?: unknown; position?: { yaw: number; pitch: number } } }) => {
       const hotspot = e.marker?.data as Hotspot;
       if (!hotspot) return;
 
       if (isEditor) {
         onHotspotSelect?.(hotspot.id);
       } else if (hotspot.type === 'navigation' && hotspot.target_scene_id) {
-        onSceneChange?.(hotspot.target_scene_id);
+        const viewer = viewerRef.current;
+        if (viewer && e.marker?.position) {
+          // Mark this as a navigation transition for a smooth entry effect
+          isNavigatingRef.current = true;
+          
+          if (hotspot.custom_data?.target_view) {
+            targetViewRef.current = hotspot.custom_data.target_view as any;
+          }
+          
+          // Zoom in to the marker's position before switching scene
+          viewer
+            .animate({
+              yaw: e.marker.position.yaw,
+              pitch: e.marker.position.pitch,
+              zoom: 80,
+              speed: '3rpm',
+            })
+            .then(() => {
+              if (hotspot.target_scene_id) onSceneChange?.(hotspot.target_scene_id);
+            });
+        } else {
+          if (hotspot.custom_data?.target_view) {
+            targetViewRef.current = hotspot.custom_data.target_view as any;
+          }
+          onSceneChange?.(hotspot.target_scene_id);
+        }
       }
 
       onHotspotClick?.(hotspot);
@@ -630,8 +680,35 @@ export function PanoramaViewer({
       const markerId = markerEl.getAttribute('data-marker-id');
       const hotspot = hotspots.find((h) => h.id === markerId);
       if (!hotspot) return;
-      if (isEditor) onHotspotSelect?.(hotspot.id);
-      else if (hotspot.type === 'navigation' && hotspot.target_scene_id) onSceneChange?.(hotspot.target_scene_id);
+      
+      if (isEditor) {
+        onHotspotSelect?.(hotspot.id);
+      } else if (hotspot.type === 'navigation' && hotspot.target_scene_id) {
+        const viewer = viewerRef.current;
+        if (viewer && hotspot.position) {
+          isNavigatingRef.current = true;
+          if (hotspot.custom_data?.target_view) {
+            targetViewRef.current = hotspot.custom_data.target_view as any;
+          }
+          const targetYaw = (hotspot.position.yaw * Math.PI) / 180;
+          const targetPitch = (hotspot.position.pitch * Math.PI) / 180;
+          viewer
+            .animate({
+              yaw: targetYaw,
+              pitch: targetPitch,
+              zoom: 80,
+              speed: '2rpm',
+            })
+            .then(() => {
+              if (hotspot.target_scene_id) onSceneChange?.(hotspot.target_scene_id);
+            });
+        } else {
+          if (hotspot.custom_data?.target_view) {
+            targetViewRef.current = hotspot.custom_data.target_view as any;
+          }
+          onSceneChange?.(hotspot.target_scene_id);
+        }
+      }
       onHotspotClick?.(hotspot);
     };
     container?.addEventListener('keydown', onMarkerKey);

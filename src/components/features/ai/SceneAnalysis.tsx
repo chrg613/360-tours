@@ -319,7 +319,7 @@ export function SceneAnalysis({
                                 </div>
                               )}
 
-                              {result.features_detected.length > 0 && (
+                              {result.features_detected && result.features_detected.length > 0 && (
                                 <div className="flex gap-1 flex-wrap">
                                   {result.features_detected.slice(0, 3).map((feature) => (
                                     <Badge key={feature} variant="outline" className="text-xs">

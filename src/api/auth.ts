@@ -47,11 +47,11 @@ export const authApi = {
     data: RegisterCredentials
   ): Promise<{ user: User | null; tokens: AuthTokens | null }> {
     const { session } = await supabaseAuth.signUp({
-      phone: data.phone,
+      channel: data.channel,
+      identifier: data.identifier,
       password: data.password,
       data: {
         full_name: data.full_name ?? null,
-        email: data.email ?? null,
       },
     });
 

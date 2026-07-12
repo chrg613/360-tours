@@ -177,12 +177,7 @@ describe('authStore', () => {
 
       vi.mocked(authApi.register).mockResolvedValue(mockResponse);
 
-      await useAuthStore.getState().register({
-        phone: '+1234567890',
-        password: 'password',
-        full_name: 'New User',
-        email: 'new@example.com',
-      });
+      await useAuthStore.getState().register('phone', '+1234567890', 'password123');
 
       const state = useAuthStore.getState();
       expect(state.user).toEqual(mockResponse.user);
@@ -193,11 +188,7 @@ describe('authStore', () => {
       vi.mocked(authApi.register).mockRejectedValue(new Error('Phone already exists'));
 
       await expect(
-        useAuthStore.getState().register({
-          phone: '+1234567890',
-          password: 'password',
-          full_name: 'Test',
-        })
+        useAuthStore.getState().register('phone', '+1234567890', 'password123')
       ).rejects.toThrow('Phone already exists');
 
       expect(useAuthStore.getState().error).toBe('Phone already exists');

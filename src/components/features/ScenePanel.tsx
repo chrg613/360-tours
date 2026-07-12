@@ -107,9 +107,16 @@ function SortableSceneItem({
         <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">
           {scene.title || `Scene ${index + 1}`}
         </p>
-        <p className="text-xs text-[var(--color-text-muted)]">
-          {scene.hotspots?.length || 0} hotspots
-        </p>
+        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+          {scene.metadata?.room_type && scene.metadata.room_type !== 'other' && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-primary-100)] text-[var(--color-primary-700)] font-medium capitalize">
+              {scene.metadata.room_type.replace(/_/g, ' ')}
+            </span>
+          )}
+          <p className="text-xs text-[var(--color-text-muted)]">
+            {scene.hotspots?.length || 0} hotspots
+          </p>
+        </div>
       </div>
 
       {/* Actions (shown on hover) */}
