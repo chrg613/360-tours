@@ -16,12 +16,12 @@ import {
   ImageIcon,
 } from 'lucide-react';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardFooter,
   Button,
   Input,
   Textarea,
@@ -37,9 +37,8 @@ import { aiApi, toursApi } from '@/api';
 import type { Tour, Scene } from '@/types';
 
 interface AITourWizardProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   onComplete: (tour: Tour, scenes: Scene[]) => void;
+  onCancel: () => void;
 }
 
 type WizardStep = 'upload' | 'details' | 'options' | 'processing' | 'review';
@@ -50,7 +49,7 @@ interface UploadedImage {
   preview: string;
 }
 
-export function AITourWizard({ open, onOpenChange, onComplete }: AITourWizardProps) {
+export function AITourWizard({ onComplete, onCancel }: AITourWizardProps) {
   const { error: toastError } = useToast();
   const [step, setStep] = useState<WizardStep>('upload');
   const [images, setImages] = useState<UploadedImage[]>([]);
@@ -66,6 +65,7 @@ export function AITourWizard({ open, onOpenChange, onComplete }: AITourWizardPro
   const [floorPlanFile, setFloorPlanFile] = useState<File | null>(null);
   const [floorPlanPreview, setFloorPlanPreview] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [isFinalizing, setIsFinalizing] = useState(false);
   const [result, setResult] = useState<{ tour?: Tour; scenes?: Scene[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const floorPlanInputRef = useRef<HTMLInputElement>(null);
@@ -171,8 +171,19 @@ export function AITourWizard({ open, onOpenChange, onComplete }: AITourWizardPro
 
   const handleJobComplete = async (job: unknown, jobResult: unknown) => {
     setJobId(null);
-    if (jobResult && typeof jobResult === 'object') {
-      const data = jobResult as { tour_id?: string; tour?: Tour; scenes?: Scene[] };
+    
+    let parsedResult = jobResult;
+    if (typeof jobResult === 'string') {
+      try {
+        parsedResult = JSON.parse(jobResult);
+      } catch (e) {
+        // Not a JSON string
+      }
+    }
+    
+    if (parsedResult && typeof parsedResult === 'object') {
+      setIsFinalizing(true);
+      const data = parsedResult as { tour_id?: string; tour?: Tour; scenes?: Scene[] };
       let tour = data.tour;
       let scenes = data.scenes;
       if (data.tour_id) {
@@ -188,6 +199,7 @@ export function AITourWizard({ open, onOpenChange, onComplete }: AITourWizardPro
         }
       }
       setResult({ tour, scenes });
+      setIsFinalizing(false);
       // Auto-open the navigable preview — no intermediate review gate.
       if (tour && scenes) {
         onComplete(tour, scenes);
@@ -195,6 +207,10 @@ export function AITourWizard({ open, onOpenChange, onComplete }: AITourWizardPro
         return;
       }
       setStep('review');
+    } else {
+      // If result is totally invalid, fallback to review or options so we don't get stuck
+      setStep('options');
+      toastError('Invalid result received from job', { title: 'Generation Error' });
     }
   };
 
@@ -229,10 +245,11 @@ export function AITourWizard({ open, onOpenChange, onComplete }: AITourWizardPro
     setFloorPlanPreview(null);
     setStep('upload');
     setJobId(null);
+    setIsFinalizing(false);
     setResult(null);
     setError(null);
     setUploadProgress(0);
-    onOpenChange(false);
+    onCancel();
   };
 
   const canProceed = () => {
@@ -259,17 +276,18 @@ export function AITourWizard({ open, onOpenChange, onComplete }: AITourWizardPro
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-[var(--color-primary-500)]" />
-            AI Tour Generation
-          </DialogTitle>
-          <DialogDescription>
-            Create a complete virtual tour from your 360° images using AI.
-          </DialogDescription>
-        </DialogHeader>
+    <Card className="w-full flex flex-col mx-auto bg-[var(--color-surface)]">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-[var(--color-primary-500)]" />
+          AI Tour Generation
+        </CardTitle>
+        <CardDescription>
+          Create a complete virtual tour from your 360° images using AI.
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent className="flex flex-col flex-1 p-0">
 
         {/* Step indicator */}
         <div className="flex items-center justify-center gap-2 py-4">
@@ -565,7 +583,7 @@ export function AITourWizard({ open, onOpenChange, onComplete }: AITourWizardPro
             {/* Step 4: Processing */}
             {step === 'processing' && (
               <div className="py-8">
-                {uploadProgress < 100 && !jobId && (
+                {uploadProgress < 100 && !jobId && !isFinalizing && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-center">
                       <Loader2 className="h-8 w-8 animate-spin text-[var(--color-primary-500)]" />
@@ -578,7 +596,7 @@ export function AITourWizard({ open, onOpenChange, onComplete }: AITourWizardPro
                   </div>
                 )}
 
-                {jobId && (
+                {jobId && !isFinalizing && (
                   <div className="space-y-3">
                     <p className="text-center font-medium flex items-center justify-center gap-2">
                       <Sparkles className="h-4 w-4 text-[var(--color-primary-500)]" />
@@ -594,6 +612,18 @@ export function AITourWizard({ open, onOpenChange, onComplete }: AITourWizardPro
                         setStep('options');
                       }}
                     />
+                  </div>
+                )}
+
+                {isFinalizing && (
+                  <div className="space-y-4 py-8">
+                    <div className="flex items-center justify-center">
+                      <Loader2 className="h-8 w-8 animate-spin text-[var(--color-primary-500)]" />
+                    </div>
+                    <p className="text-center font-medium">Finalizing your virtual tour...</p>
+                    <p className="text-center text-sm text-[var(--color-text-muted)]">
+                      Applying intelligent connections and spatial data
+                    </p>
                   </div>
                 )}
               </div>
@@ -679,8 +709,9 @@ export function AITourWizard({ open, onOpenChange, onComplete }: AITourWizardPro
             )}
           </div>
         </ScrollArea>
+      </CardContent>
 
-        <DialogFooter className="mt-4 pt-4 border-t border-[var(--color-border)]">
+      <CardFooter className="mt-4 pt-4 border-t border-[var(--color-border)] px-6 pb-6">
           {step !== 'processing' && (
             <>
               {step !== 'upload' && step !== 'review' && (
@@ -714,8 +745,7 @@ export function AITourWizard({ open, onOpenChange, onComplete }: AITourWizardPro
               </Button>
             </>
           )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </CardFooter>
+    </Card>
   );
 }

@@ -272,6 +272,7 @@ export function TourCreatePage() {
         </div>
       </div>
 
+      {/* --- OLD PIPELINE COMMENTED OUT ---
       <Card className="border-[var(--color-primary-200)] bg-[var(--color-primary-50)]/50">
         <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -287,7 +288,6 @@ export function TourCreatePage() {
         </CardContent>
       </Card>
 
-      {/* Step 1: Tour Info */}
       {step === 'info' && (
         <Card>
           <CardHeader>
@@ -339,7 +339,6 @@ export function TourCreatePage() {
         </Card>
       )}
 
-      {/* Step 2: Upload */}
       {step === 'upload' && createdTour && (
         <>
           <Card>
@@ -350,7 +349,6 @@ export function TourCreatePage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Drop Zone */}
               <label
                 onDrop={handleDrop}
                 onDragOver={(e) => e.preventDefault()}
@@ -375,7 +373,6 @@ export function TourCreatePage() {
                 </p>
               </label>
 
-              {/* File List */}
               {uploadingFiles.length > 0 && (
                 <div className="mt-6 space-y-3">
                   {uploadingFiles.map((file, index) => (
@@ -418,7 +415,6 @@ export function TourCreatePage() {
             </CardContent>
           </Card>
 
-          {/* Actions */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Button variant="outline" onClick={() => setStep('info')}>
@@ -457,11 +453,11 @@ export function TourCreatePage() {
           </div>
         </>
       )}
+      --- OLD PIPELINE END --- */}
 
       <AITourWizard
-        open={showAIWizard}
-        onOpenChange={setShowAIWizard}
         onComplete={handleAIComplete}
+        onCancel={() => navigate(ROUTES.TOURS)}
       />
     </div>
   );
