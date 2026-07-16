@@ -11,6 +11,7 @@ export type { Collaborator, InviteCollaboratorInput } from './collaboration';
 export { usersApi } from './users';
 export { uploadApi } from './upload';
 export { aiApi } from './ai';
+export { labApi } from './lab';
 export type {
   SceneAnalysisResult,
   HotspotSuggestion,

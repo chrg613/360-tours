@@ -18,6 +18,7 @@ export const ROUTES = {
   PUBLIC_TOUR: '/view/:id',
   EMBED_TOUR: '/embed/:id',
   LOCAL_TOUR: '/local/:propertyId',
+  LAB: '/lab',
 } as const;
 
 // Navigation Items

@@ -10,6 +10,7 @@ import {
   ChevronsRight,
   HelpCircle,
   MessageSquare,
+  FlaskConical,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useUIStore } from '@/stores';
@@ -23,6 +24,7 @@ interface SidebarProps {
 const navItems = [
   { label: 'Dashboard', path: ROUTES.DASHBOARD, icon: LayoutDashboard },
   { label: 'Tours', path: ROUTES.TOURS, icon: Images },
+  { label: 'Splat Lab', path: ROUTES.LAB, icon: FlaskConical },
   { label: 'Media', path: ROUTES.MEDIA, icon: FolderOpen },
   { label: 'Analytics', path: ROUTES.ANALYTICS, icon: BarChart3 },
   { label: 'Settings', path: ROUTES.SETTINGS, icon: Settings },
