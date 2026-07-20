@@ -1,4 +1,4 @@
-import { api } from './client'; // Assumes you have a base axios client
+import { apiClient as api } from './client'; // Assumes you have a base axios client
 
 export interface SplatJob {
   id: string;

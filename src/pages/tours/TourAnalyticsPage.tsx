@@ -70,7 +70,7 @@ const COLORS = ['#FF5733', '#FFC857', '#10b981', '#f59e0b', '#ef4444', '#FF8A5C'
 interface StatCardProps {
   title: string;
   value: string | number;
-  icon: React.ElementType;
+  icon: any;
   change?: number;
   changeLabel?: string;
 }
@@ -90,7 +90,7 @@ function StatCard({ title, value, icon: Icon, change, changeLabel }: StatCardPro
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Badge
-                    variant={isPositive ? 'success' : 'destructive'}
+                    variant={isPositive ? 'default' : 'destructive'}
                     className="text-xs"
                   >
                     {isPositive ? (

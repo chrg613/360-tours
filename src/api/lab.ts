@@ -46,10 +46,10 @@ export const labApi = {
    */
   async getUploadUrl(
     jobId: string,
-    _filename: string
+    filename: string
   ): Promise<{ upload_url: string; storage_path: string }> {
     const response = await apiClient.post<{ upload_url: string; storage_path: string }>(
-      `/lab/jobs/${jobId}/upload-video`
+      `/lab/jobs/${jobId}/upload-video?filename=${encodeURIComponent(filename)}`
     );
     return extractData(response);
   },

@@ -1,14 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { labApi, SplatJob } from '@/api/labApi';
 import { Upload, Play, Loader, CheckCircle, XCircle } from 'lucide-react';
-import { supabase } from '@/api/client';
+import { supabase } from '@/lib/supabaseAuth';
 import { SplatViewer } from '@/components/SplatViewer';
+import { DollhouseEditor } from '@/components/features/DollhouseEditor';
 
 export const LabDashboard = () => {
   const [jobs, setJobs] = useState<SplatJob[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [showEditor, setShowEditor] = useState(false);
+  
+  const dummyRooms = [
+    { id: '1', name: 'Room 1', url: '/splats/room1.splat', position: [0, 0, 0] as [number,number,number], rotation: [0, 0, 0] as [number,number,number] },
+    { id: '2', name: 'Hallway', url: '/splats/hallway.splat', position: [2, 0, 0] as [number,number,number], rotation: [0, 0, 0] as [number,number,number] },
+    { id: '3', name: 'Room 2', url: '/splats/room2.splat', position: [4, 0, 0] as [number,number,number], rotation: [0, 0, 0] as [number,number,number] }
+  ];
 
   useEffect(() => {
     loadJobs();
@@ -40,7 +48,7 @@ export const LabDashboard = () => {
       });
       
       // 2. Upload file to Supabase directly
-      const { error } = await supabase.storage.from('splat-jobs').upload(upload_path, file);
+      const { error } = await supabase!.storage.from('splat-jobs').upload(upload_path, file);
       if (error) throw error;
       
       // 3. Start pipeline
@@ -80,8 +88,31 @@ export const LabDashboard = () => {
             {isUploading ? <Loader className="animate-spin" /> : <Upload />}
             Upload & Process
           </button>
+          
+          <div className="ml-auto">
+            <button
+              onClick={() => setShowEditor(!showEditor)}
+              className="px-4 py-2 bg-purple-100 text-purple-700 font-medium rounded-lg hover:bg-purple-200 transition-colors"
+            >
+              {showEditor ? 'Hide Dollhouse Editor' : 'Open Dollhouse Editor (Multi-Room)'}
+            </button>
+          </div>
         </div>
       </div>
+      
+      {showEditor && (
+        <div className="bg-white p-6 rounded-lg border shadow-sm">
+          <h2 className="text-xl font-semibold mb-4">Multi-Room Layout Editor</h2>
+          <p className="text-gray-500 text-sm mb-4">Drag rooms to snap them together. Once aligned, save the layout.</p>
+          <DollhouseEditor 
+            rooms={dummyRooms} 
+            onSave={(layout) => {
+              console.log("Saved Layout:", layout);
+              alert("Layout saved! Check console for transform matrices.");
+            }} 
+          />
+        </div>
+      )}
 
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Your Jobs</h2>

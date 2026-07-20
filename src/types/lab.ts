@@ -35,6 +35,7 @@ export interface CreateSplatJobRequest {
   is_360_video: boolean;
   mask_people: boolean;
   quality_preset: QualityPreset;
+  filenames: string[];
 }
 
 export interface SplatPipelineStage {

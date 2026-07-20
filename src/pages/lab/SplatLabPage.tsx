@@ -38,6 +38,8 @@ import { useSplatPipeline, PIPELINE_STAGES } from '@/hooks/useSplatPipeline';
 import type { SplatJob, SplatJobStatus, QualityPreset } from '@/types/lab';
 import { formatRelativeTime } from '@/utils/format';
 import { cn } from '@/utils';
+import { ROUTES } from '@/constants';
+import { useNavigate } from 'react-router-dom';
 
 // ─── Stage icons map ──────────────────────────────────────────────────────────
 const STAGE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -358,7 +360,7 @@ function CreateJobForm({
   onSubmit,
   isLoading,
 }: {
-  onSubmit: (data: { title: string; is360: boolean; maskPeople: boolean; quality: QualityPreset }, file: File) => void;
+  onSubmit: (data: { title: string; is360: boolean; maskPeople: boolean; quality: QualityPreset }, files: File[]) => void;
   isLoading: boolean;
 }) {
   const [title, setTitle] = useState('');
@@ -366,31 +368,31 @@ function CreateJobForm({
   const [maskPeople, setMaskPeople] = useState(false);
   const [quality, setQuality] = useState<QualityPreset>('balanced');
   const [dragOver, setDragOver] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragOver(false);
-    const dropped = e.dataTransfer.files[0];
-    if (dropped && dropped.type.startsWith('video/')) {
-      setFile(dropped);
-      if (!title) setTitle(dropped.name.replace(/\.[^.]+$/, ''));
+    const dropped = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('video/'));
+    if (dropped.length > 0) {
+      setFiles(prev => [...prev, ...dropped]);
+      if (!title) setTitle(dropped[0].name.replace(/\.[^.]+$/, '') + (dropped.length > 1 ? ' + more' : ''));
     }
   }, [title]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = e.target.files?.[0];
-    if (picked) {
-      setFile(picked);
-      if (!title) setTitle(picked.name.replace(/\.[^.]+$/, ''));
+    const picked = Array.from(e.target.files || []);
+    if (picked.length > 0) {
+      setFiles(prev => [...prev, ...picked]);
+      if (!title) setTitle(picked[0].name.replace(/\.[^.]+$/, '') + (picked.length > 1 ? ' + more' : ''));
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !title.trim()) return;
-    onSubmit({ title: title.trim(), is360, maskPeople, quality }, file);
+    if (files.length === 0 || !title.trim()) return;
+    onSubmit({ title: title.trim(), is360, maskPeople, quality }, files);
   };
 
   const qualityOptions: { value: QualityPreset; label: string; desc: string }[] = [
@@ -433,7 +435,7 @@ function CreateJobForm({
           'flex cursor-pointer flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed p-10 transition-all duration-200',
           dragOver
             ? 'border-[var(--color-primary-500)] bg-[var(--color-primary-50)]'
-            : file
+            : files.length > 0
             ? 'border-[var(--color-success-500)] bg-[var(--color-success-50)]'
             : 'border-[var(--color-border)] hover:border-[var(--color-primary-400)] hover:bg-[var(--color-primary-50)]'
         )}
@@ -442,33 +444,36 @@ function CreateJobForm({
           ref={fileInputRef}
           type="file"
           accept="video/*"
+          multiple
           className="sr-only"
           onChange={handleFileChange}
         />
         <div
           className={cn(
             'flex h-14 w-14 items-center justify-center rounded-xl',
-            file ? 'bg-[var(--color-success-100)]' : 'bg-[var(--color-primary-100)]'
+            files.length > 0 ? 'bg-[var(--color-success-100)]' : 'bg-[var(--color-primary-100)]'
           )}
         >
-          {file ? (
+          {files.length > 0 ? (
             <Film className="h-7 w-7 text-[var(--color-success-600)]" />
           ) : (
             <Upload className="h-7 w-7 text-[var(--color-primary-600)]" />
           )}
         </div>
         <div className="text-center">
-          {file ? (
+          {files.length > 0 ? (
             <>
-              <p className="font-semibold text-[var(--color-success-700)]">{file.name}</p>
+              <p className="font-semibold text-[var(--color-success-700)]">
+                {files.length} {files.length === 1 ? 'file' : 'files'} selected
+              </p>
               <p className="mt-0.5 text-sm text-[var(--color-success-600)]">
-                {(file.size / 1024 / 1024).toFixed(1)} MB — click to change
+                {(files.reduce((acc, f) => acc + f.size, 0) / 1024 / 1024).toFixed(1)} MB total — click to add more
               </p>
             </>
           ) : (
             <>
               <p className="font-semibold text-[var(--color-text-primary)]">
-                Drop your video here
+                Drop your video(s) here
               </p>
               <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
                 or click to browse — MP4, MOV, MKV supported
@@ -558,7 +563,7 @@ function CreateJobForm({
         type="submit"
         size="lg"
         className="w-full"
-        disabled={!file || !title.trim() || isLoading}
+        disabled={files.length === 0 || !title.trim() || isLoading}
       >
         {isLoading ? (
           <>
@@ -578,6 +583,7 @@ function CreateJobForm({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export function SplatLabPage() {
+  const navigate = useNavigate();
   const { job, jobs, isCreating, stages: _stages, createAndStart, selectJob, clearJob, error } =
     useSplatPipeline();
 
@@ -586,7 +592,7 @@ export function SplatLabPage() {
 
   const handleFormSubmit = (
     data: { title: string; is360: boolean; maskPeople: boolean; quality: QualityPreset },
-    file: File
+    files: File[]
   ) => {
     void createAndStart(
       {
@@ -595,7 +601,7 @@ export function SplatLabPage() {
         mask_people: data.maskPeople,
         quality_preset: data.quality,
       },
-      file
+      files
     );
   };
 

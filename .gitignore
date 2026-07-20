@@ -35,3 +35,15 @@ dist-ssr
 *.sw?
 
 seed_properties/
+# Large media & local splat lab artifacts (not for git)
+data/housetour/**
+!data/housetour/README.md
+public/splats/**
+!public/splats/.gitkeep
+*.mp4
+*.webm
+*.mkv
+*.splat
+*.ply
+*.pdf
+splat_aligner/

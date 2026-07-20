@@ -40,7 +40,7 @@ interface UseSplatPipelineReturn {
   isPolling: boolean;
   isCreating: boolean;
   stages: SplatPipelineStage[];
-  createAndStart: (data: CreateSplatJobRequest, videoFile: File) => Promise<void>;
+  createAndStart: (data: CreateSplatJobRequest, videoFiles: File[]) => Promise<void>;
   cancelJob: () => void;
   selectJob: (job: SplatJob) => void;
   clearJob: () => void;
@@ -114,25 +114,31 @@ export function useSplatPipeline(): UseSplatPipelineReturn {
   }, [startPolling, stopPolling]);
 
   const createAndStart = useCallback(
-    async (data: CreateSplatJobRequest, videoFile: File) => {
+    async (data: CreateSplatJobRequest, videoFiles: File[]) => {
       setError(null);
       setIsCreating(true);
       try {
-        // 1. Create job record
-        const newJob = await labApi.createJob(data);
+        // 1. Create job record with multiple filenames
+        const dataWithFilenames = {
+          ...data,
+          filenames: videoFiles.map(f => f.name)
+        };
+        const newJob = await labApi.createJob(dataWithFilenames);
         setJob({ ...newJob, status: 'uploading', progress: 0, stage_message: 'Preparing upload…' });
 
-        // 2. Get upload URL / path
-        const { storage_path } = await labApi.getUploadUrl(newJob.id, videoFile.name);
+        // 2 & 3. Get upload URLs and upload directly to Supabase storage in parallel
+        await Promise.all(
+          videoFiles.map(async (file) => {
+            const { storage_path } = await labApi.getUploadUrl(newJob.id, file.name);
+            const { error: uploadError } = await supabase.storage
+              .from('splat-jobs')
+              .upload(storage_path, file, { upsert: true });
 
-        // 3. Upload directly to Supabase storage
-        const { error: uploadError } = await supabase.storage
-          .from('splat-jobs')
-          .upload(storage_path, videoFile, { upsert: true });
-
-        if (uploadError) {
-          throw new Error(uploadError.message);
-        }
+            if (uploadError) {
+              throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
+            }
+          })
+        );
 
         // 4. Kick off the pipeline
         const started = await labApi.startPipeline(newJob.id);

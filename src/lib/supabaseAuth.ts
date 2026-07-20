@@ -18,7 +18,7 @@ if (!IS_TEST_MODE && (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY)) {
   );
 }
 
-const supabase = SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY
+export const supabase = SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
       auth: {
         persistSession: true,

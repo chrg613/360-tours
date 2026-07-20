@@ -37,6 +37,7 @@ const EmbedTourPage = lazy(() => import('@/pages/EmbedTourPage').then((m) => ({ 
 const LocalTourPage = lazy(() => import('@/pages/LocalTourPage').then((m) => ({ default: m.LocalTourPage })));
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 const SplatLabPage = lazy(() => import('@/pages/lab/SplatLabPage').then((m) => ({ default: m.SplatLabPage })));
+const DollhouseEditorPage = lazy(() => import('@/pages/lab/DollhouseEditorPage').then((m) => ({ default: m.DollhouseEditorPage })));
 
 function LazyPage({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
@@ -83,6 +84,7 @@ export const router = createBrowserRouter([
       { path: ROUTES.PROFILE, element: <LazyPage><ProfilePage /></LazyPage> },
       { path: ROUTES.SETTINGS, element: <LazyPage><SettingsPage /></LazyPage> },
       { path: ROUTES.LAB, element: <LazyPage><SplatLabPage /></LazyPage> },
+      { path: ROUTES.LAB_EDITOR, element: <LazyPage><DollhouseEditorPage /></LazyPage> },
     ],
   },
 
